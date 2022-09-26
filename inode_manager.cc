@@ -10,11 +10,15 @@ disk::disk()
 void
 disk::read_block(blockid_t id, char *buf)
 {
+  // copy content in block to buf
+  memcpy(buf,blocks[id],BLOCK_SIZE);
 }
 
 void
 disk::write_block(blockid_t id, const char *buf)
 {
+  // copy content in buf to block
+  memcpy(blocks[id],buf,BLOCK_SIZE);
 }
 
 // block layer -----------------------------------------
@@ -28,8 +32,11 @@ block_manager::alloc_block()
    * note: you should mark the corresponding bit in block bitmap when alloc.
    * you need to think about which block you can start to be allocated.
    */
-
-  return 0;
+  uint32_t i = 0;
+  for(; i < BLOCK_NUM; ++i){
+    if(using_blocks[i] == 0) break;
+  }
+  return i;
 }
 
 void
@@ -39,7 +46,7 @@ block_manager::free_block(uint32_t id)
    * your code goes here.
    * note: you should unmark the corresponding bit in the block bitmap when free.
    */
-  
+  using_blocks[id] = 0;
   return;
 }
 
@@ -90,7 +97,21 @@ inode_manager::alloc_inode(uint32_t type)
    * note: the normal inode block should begin from the 2nd inode block.
    * the 1st is used for root_dir, see inode_manager::inode_manager().
    */
-  return 1;
+  printf("\tim: alloc_inode %d\n", type);
+  for(uint32_t i = 1; i < INODE_NUM; ++i){
+    inode_t  *inode = get_inode(i);
+    if(inode != NULL) continue;
+    inode = (inode_t *)malloc(sizeof(inode_t));
+    bzero(inode, sizeof(inode_t));
+    inode->type = type;
+    inode->atime = time(NULL);
+    inode->mtime = time(NULL);
+    inode->ctime = time(NULL);
+    put_inode(i, inode);
+    return i;
+  }
+
+  return -1;
 }
 
 void
@@ -102,6 +123,13 @@ inode_manager::free_inode(uint32_t inum)
    * if not, clear it, and remember to write back to disk.
    */
 
+  printf("\tim: free_inode %d\n", inum);
+  inode_t *inode = get_inode(inum);
+  if(inode != NULL){
+    inode->type = 0;
+    put_inode(inum,inode);  // write back to disk
+    free(inode);  // free its space
+  }
   return;
 }
 
@@ -112,9 +140,23 @@ struct inode*
 inode_manager::get_inode(uint32_t inum)
 {
   struct inode *ino;
+  char buf[BLOCK_SIZE];
   /* 
    * your code goes here.
    */
+  printf("\tim: get_inode %d\n", inum);
+
+  if(inum < 0 || inum >= INODE_NUM){
+    printf("\tim: ERROR inum out of range %d\n", inum);
+    return NULL;
+  }
+
+  bm->read_block(IBLOCK(inum, bm->sb.nblocks), buf);
+  ino = (struct inode*)buf + inum%IPB;
+  if (ino->type == 0) {
+    printf("\tim: inode not exist\n");
+    return NULL;
+  }
 
   return ino;
 }
@@ -173,7 +215,13 @@ inode_manager::get_attr(uint32_t inum, extent_protocol::attr &a)
    * note: get the attributes of inode inum.
    * you can refer to "struct attr" in extent_protocol.h
    */
-  
+  printf("\tim: get_attr %d\n", inum);
+  inode_t * inode = get_inode(inum);
+  a.type = inode->type;
+  a.mtime = inode->mtime;
+  a.ctime = inode->ctime;
+  a.atime = inode->atime;
+  a.size = inode->size;
   return;
 }
 
