@@ -90,6 +90,7 @@ class inode_manager {
   void write_file(uint32_t inum, const char *buf, int size);
   void remove_file(uint32_t inum);
   void get_attr(uint32_t inum, extent_protocol::attr &a);
+  uint32_t get_block_id(uint32_t i, inode_t *inode);
 };
 
 #endif

@@ -34,9 +34,12 @@ block_manager::alloc_block()
    */
   uint32_t i = 0;
   for(; i < BLOCK_NUM; ++i){
-    if(using_blocks[i] == 0) break;
+    if(using_blocks[i] == 0) {
+      using_blocks[i] = 1;
+      return i;
+    }
   }
-  return i;
+  return 0; // alloc fail
 }
 
 void
@@ -100,7 +103,7 @@ inode_manager::alloc_inode(uint32_t type)
   printf("\tim: alloc_inode %d\n", type);
   for(uint32_t i = 1; i < INODE_NUM; ++i){
     inode_t  *inode = get_inode(i);
-    if(inode != NULL) continue;
+    if(inode != NULL) {free(inode); continue;}
     inode = (inode_t *)malloc(sizeof(inode_t));
     bzero(inode, sizeof(inode_t));
     inode->type = type;
@@ -108,6 +111,7 @@ inode_manager::alloc_inode(uint32_t type)
     inode->mtime = time(NULL);
     inode->ctime = time(NULL);
     put_inode(i, inode);
+    free(inode);
     return i;
   }
 
@@ -139,7 +143,7 @@ inode_manager::free_inode(uint32_t inum)
 struct inode* 
 inode_manager::get_inode(uint32_t inum)
 {
-  struct inode *ino;
+  struct inode *ino, *ino_disk;
   char buf[BLOCK_SIZE];
   /* 
    * your code goes here.
@@ -152,11 +156,15 @@ inode_manager::get_inode(uint32_t inum)
   }
 
   bm->read_block(IBLOCK(inum, bm->sb.nblocks), buf);
-  ino = (struct inode*)buf + inum%IPB;
-  if (ino->type == 0) {
+  ino_disk = (struct inode*)buf + inum%IPB;
+  if (ino_disk->type == 0) {
     printf("\tim: inode not exist\n");
     return NULL;
   }
+
+  /* Malloc inode and caller should release the memory. */
+  ino = (struct inode*)malloc(sizeof(struct inode));
+  *ino = *ino_disk;
 
   return ino;
 }
@@ -179,6 +187,25 @@ inode_manager::put_inode(uint32_t inum, struct inode *ino)
 
 #define MIN(a,b) ((a)<(b) ? (a) : (b))
 
+uint32_t
+inode_manager::get_block_id(uint32_t i, inode_t *inode)
+{
+  char buf[BLOCK_SIZE];
+  // find block number according to data in inode
+  if(i < NDIRECT){
+    return inode->blocks[i];
+  } else {
+    if (i < MAXFILE){
+
+      bm->read_block(inode->blocks[NDIRECT], buf);
+      return ((blockid_t *)buf)[i - NDIRECT];
+    } else{
+      printf("\tim: ERROR block id out of range\n");
+      assert(0);
+    }
+  }
+}
+
 /* Get all the data of a file by inum. 
  * Return alloced data, should be freed by caller. */
 void
@@ -189,7 +216,38 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
    * note: read blocks related to inode number inum,
    * and copy them to buf_out
    */
-  
+  char buf[BLOCK_SIZE];
+
+  printf("\tim: read_file %d\n", inum);
+
+  // read blocks related to inode number inum
+  inode_t *inode = get_inode(inum);
+  if(inode != NULL){
+
+    *size = inode->size;
+    // calculate block num and remain size
+    uint32_t num_blocks = (inode->size)/BLOCK_SIZE;
+    uint32_t size_remain = (inode->size)%BLOCK_SIZE;
+    // copy them to buf_out
+    // malloc buf
+    *buf_out = (char *)malloc(inode->size);
+
+    // read blocks
+    for(uint32_t i = 0; i < num_blocks; ++i){
+      // find block number according to data in inode inum
+      bm->read_block(get_block_id(i, inode), buf);
+      memcpy(*buf_out + i*BLOCK_SIZE, buf, BLOCK_SIZE);
+    }
+
+    if(size_remain != 0){
+      // read remain
+      bm->read_block(get_block_id(num_blocks, inode), buf);
+      memcpy(*buf_out + num_blocks*BLOCK_SIZE, buf, size_remain);
+    }
+
+    free(inode);
+  }
+
   return;
 }
 
@@ -203,7 +261,66 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
    * you need to consider the situation when the size of buf 
    * is larger or smaller than the size of original inode
    */
-  
+  printf("\tim: write_file %d\n", inum);
+  inode_t *inode = get_inode(inum);
+  if(inode != NULL){
+    // write buf to blocks of inode inum
+
+    // calculate num of blocks have and blocks need
+    uint32_t num_blocks_now = (inode->size % BLOCK_SIZE) ? inode->size/BLOCK_SIZE + 1 : inode->size/BLOCK_SIZE;
+    uint32_t num_blocks_need = (size % BLOCK_SIZE) ? size/BLOCK_SIZE + 1 : size/BLOCK_SIZE;
+
+    // adjust and malloc
+    if(num_blocks_need > num_blocks_now){
+      // malloc
+      for(uint32_t i = num_blocks_now; i < num_blocks_need; ++i){
+        if(i < NDIRECT){
+          inode->blocks[i] = bm->alloc_block();
+        } else {
+          if(i < MAXFILE){
+            if (!inode->blocks[NDIRECT]) {
+              inode->blocks[NDIRECT] = bm->alloc_block();
+            };
+            char buf[BLOCK_SIZE];
+            bm->read_block(inode->blocks[NDIRECT], buf);
+            ((blockid_t*)buf)[i - NDIRECT] = bm->alloc_block();
+            bm->write_block(inode->blocks[NDIRECT], buf);
+          }
+        }
+      }
+    } else {
+      if(num_blocks_need < num_blocks_now){
+        // free
+        for(uint32_t i = num_blocks_need; i < num_blocks_now; ++i){
+          bm->free_block(get_block_id(i, inode));
+        }
+      }
+    }
+
+    // calculate block num and remain size
+    uint32_t num_blocks = size/BLOCK_SIZE;
+    uint32_t size_remain = size%BLOCK_SIZE;
+
+    // write blocks
+    for(uint32_t i = 0; i < num_blocks; ++i){
+      // find block number according to data in inode inum
+      bm->write_block(get_block_id(i, inode), buf + i*BLOCK_SIZE);
+    }
+
+    if(size_remain != 0){
+      // read remain
+      char remain_buf[BLOCK_SIZE];
+      memcpy(remain_buf, buf + num_blocks*BLOCK_SIZE, size_remain);
+      bm->write_block(get_block_id(num_blocks, inode), remain_buf);
+    }
+
+    inode->size = size;
+    inode->atime = time(NULL);
+    inode->mtime = time(NULL);
+    inode->ctime = time(NULL);
+    put_inode(inum,inode);
+    free(inode);
+  }
   return;
 }
 
@@ -222,6 +339,7 @@ inode_manager::get_attr(uint32_t inum, extent_protocol::attr &a)
   a.ctime = inode->ctime;
   a.atime = inode->atime;
   a.size = inode->size;
+  free(inode);
   return;
 }
 
