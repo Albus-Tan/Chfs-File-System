@@ -101,8 +101,12 @@ inode_manager::alloc_inode(uint32_t type)
    * the 1st is used for root_dir, see inode_manager::inode_manager().
    */
   printf("\tim: alloc_inode %d\n", type);
-  for(uint32_t i = 1; i < INODE_NUM; ++i){
-    inode_t  *inode = get_inode(i);
+
+  // check from where last alloc
+  static uint32_t idx = 0;
+  for(; idx < INODE_NUM;){
+    idx = (idx + 1) % INODE_NUM;
+    inode_t  *inode = get_inode(idx);
     if(inode != NULL) {free(inode); continue;}
     inode = (inode_t *)malloc(sizeof(inode_t));
     bzero(inode, sizeof(inode_t));
@@ -110,9 +114,9 @@ inode_manager::alloc_inode(uint32_t type)
     inode->atime = time(NULL);
     inode->mtime = time(NULL);
     inode->ctime = time(NULL);
-    put_inode(i, inode);
+    put_inode(idx, inode);
     free(inode);
-    return i;
+    return idx;
   }
 
   return -1;
@@ -334,12 +338,14 @@ inode_manager::get_attr(uint32_t inum, extent_protocol::attr &a)
    */
   printf("\tim: get_attr %d\n", inum);
   inode_t * inode = get_inode(inum);
-  a.type = inode->type;
-  a.mtime = inode->mtime;
-  a.ctime = inode->ctime;
-  a.atime = inode->atime;
-  a.size = inode->size;
-  free(inode);
+  if(inode != NULL){
+    a.type = inode->type;
+    a.mtime = inode->mtime;
+    a.ctime = inode->ctime;
+    a.atime = inode->atime;
+    a.size = inode->size;
+    free(inode);
+  }
   return;
 }
 
@@ -350,6 +356,26 @@ inode_manager::remove_file(uint32_t inum)
    * your code goes here
    * note: you need to consider about both the data block and inode of the file
    */
-  
+
+  printf("\tim: remove_file %d\n", inum);
+
+  inode_t *inode = get_inode(inum);
+  if(inode != NULL){
+
+    // calculate block num
+    uint32_t num_blocks = (inode->size)%BLOCK_SIZE ? (inode->size)/BLOCK_SIZE + 1 : (inode->size)/BLOCK_SIZE;
+
+    // remove data blocks
+    for(uint32_t i = 0; i < num_blocks; ++i){
+      bm->free_block(get_block_id(i, inode));
+    }
+    if(num_blocks > NDIRECT)
+      bm->free_block(inode->blocks[NDIRECT]);
+
+    // remove inode of the file
+    free_inode(inum);
+    free(inode);
+  }
+
   return;
 }

@@ -81,6 +81,7 @@ class inode_manager {
   block_manager *bm;
   struct inode* get_inode(uint32_t inum);
   void put_inode(uint32_t inum, struct inode *ino);
+  uint32_t get_block_id(uint32_t i, inode_t *inode);
 
  public:
   inode_manager();
@@ -90,7 +91,6 @@ class inode_manager {
   void write_file(uint32_t inum, const char *buf, int size);
   void remove_file(uint32_t inum);
   void get_attr(uint32_t inum, extent_protocol::attr &a);
-  uint32_t get_block_id(uint32_t i, inode_t *inode);
 };
 
 #endif
