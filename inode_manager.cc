@@ -32,13 +32,18 @@ block_manager::alloc_block()
    * note: you should mark the corresponding bit in block bitmap when alloc.
    * you need to think about which block you can start to be allocated.
    */
-  uint32_t i = 0;
+  // start to allocate from data part
+  // |<-sb->|<-free block bitmap->|<-inode table->|<-data->|
+  // |  1 1 |   (nblocks)/BPB + 1 |(INODE_NUM)/IPB|
+  uint32_t i = IBLOCK(INODE_NUM, sb.nblocks);
   for(; i < BLOCK_NUM; ++i){
     if(using_blocks[i] == 0) {
+      // mark the corresponding bit in block bitmap
       using_blocks[i] = 1;
       return i;
     }
   }
+  printf("\tim: ERROR alloc_block failed!\n");
   return 0; // alloc fail
 }
 
@@ -49,6 +54,7 @@ block_manager::free_block(uint32_t id)
    * your code goes here.
    * note: you should unmark the corresponding bit in the block bitmap when free.
    */
+  // unmark the corresponding bit in the block bitmap
   using_blocks[id] = 0;
   return;
 }
@@ -58,6 +64,11 @@ block_manager::free_block(uint32_t id)
 block_manager::block_manager()
 {
   d = new disk();
+
+  // mark free block bitmap for |<-sb->|<-free block bitmap->|<-inode table->|
+  for(uint32_t i = 0; i < IBLOCK(INODE_NUM, sb.nblocks); ++i){
+    using_blocks[i] = 1;
+  }
 
   // format the disk
   sb.size = BLOCK_SIZE * BLOCK_NUM;
@@ -104,7 +115,8 @@ inode_manager::alloc_inode(uint32_t type)
 
   // check from where last alloc
   static uint32_t idx = 0;
-  for(; idx < INODE_NUM;){
+  // check every inode once
+  for(int i = 0; i < INODE_NUM; i++){
     idx = (idx + 1) % INODE_NUM;
     inode_t  *inode = get_inode(idx);
     if(inode != NULL) {free(inode); continue;}
@@ -119,6 +131,7 @@ inode_manager::alloc_inode(uint32_t type)
     return idx;
   }
 
+  printf("\tim: ERROR alloc_inode %d failed!\n", type);
   return -1;
 }
 
@@ -200,8 +213,9 @@ inode_manager::get_block_id(uint32_t i, inode_t *inode)
     return inode->blocks[i];
   } else {
     if (i < MAXFILE){
-
+      // check id in INDIRECT block pointed
       bm->read_block(inode->blocks[NDIRECT], buf);
+      // return id according to pos in INDIRECT block (get directly by [] as all id are uint)
       return ((blockid_t *)buf)[i - NDIRECT];
     } else{
       printf("\tim: ERROR block id out of range\n");
@@ -282,13 +296,19 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
           inode->blocks[i] = bm->alloc_block();
         } else {
           if(i < MAXFILE){
+            // malloc block and record id in block pointed by idx NDIRECT
             if (!inode->blocks[NDIRECT]) {
+              printf("\tim: alloc new NDIRECT block\n");
               inode->blocks[NDIRECT] = bm->alloc_block();
             };
             char buf[BLOCK_SIZE];
             bm->read_block(inode->blocks[NDIRECT], buf);
+            // write new block id to pos i - NDIRECT in block pointed by idx NDIRECT
             ((blockid_t*)buf)[i - NDIRECT] = bm->alloc_block();
             bm->write_block(inode->blocks[NDIRECT], buf);
+          } else {
+            printf("\tim: ERROR file too large\n");
+            assert(0);
           }
         }
       }
@@ -371,6 +391,9 @@ inode_manager::remove_file(uint32_t inum)
     }
     if(num_blocks > NDIRECT)
       bm->free_block(inode->blocks[NDIRECT]);
+    // since need to check if blocks[NDIRECT] = NULL when malloc
+    // clear that part data
+    bzero(inode, sizeof(inode_t));
 
     // remove inode of the file
     free_inode(inum);
