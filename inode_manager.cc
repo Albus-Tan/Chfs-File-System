@@ -111,7 +111,7 @@ inode_manager::alloc_inode(uint32_t type)
    * note: the normal inode block should begin from the 2nd inode block.
    * the 1st is used for root_dir, see inode_manager::inode_manager().
    */
-  printf("\tim: alloc_inode %d\n", type);
+  if(PRINT_LOG) printf("\tim: alloc_inode %d\n", type);
 
   // check from where last alloc
   static uint32_t idx = 0;
@@ -144,7 +144,7 @@ inode_manager::free_inode(uint32_t inum)
    * if not, clear it, and remember to write back to disk.
    */
 
-  printf("\tim: free_inode %d\n", inum);
+  if(PRINT_LOG) printf("\tim: free_inode %d\n", inum);
   inode_t *inode = get_inode(inum);
   if(inode != NULL){
     inode->type = 0;
@@ -165,7 +165,7 @@ inode_manager::get_inode(uint32_t inum)
   /* 
    * your code goes here.
    */
-  printf("\tim: get_inode %d\n", inum);
+  if(PRINT_LOG) printf("\tim: get_inode %d\n", inum);
 
   if(inum < 0 || inum >= INODE_NUM){
     printf("\tim: ERROR inum out of range %d\n", inum);
@@ -175,7 +175,7 @@ inode_manager::get_inode(uint32_t inum)
   bm->read_block(IBLOCK(inum, bm->sb.nblocks), buf);
   ino_disk = (struct inode*)buf + inum%IPB;
   if (ino_disk->type == 0) {
-    printf("\tim: inode not exist\n");
+    if(PRINT_LOG) printf("\tim: inode not exist\n");
     return NULL;
   }
 
@@ -192,7 +192,7 @@ inode_manager::put_inode(uint32_t inum, struct inode *ino)
   char buf[BLOCK_SIZE];
   struct inode *ino_disk;
 
-  printf("\tim: put_inode %d\n", inum);
+  if(PRINT_LOG) printf("\tim: put_inode %d\n", inum);
   if (ino == NULL)
     return;
 
@@ -236,7 +236,7 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
    */
   char buf[BLOCK_SIZE];
 
-  printf("\tim: read_file %d\n", inum);
+  if(PRINT_LOG) printf("\tim: read_file %d\n", inum);
 
   // read blocks related to inode number inum
   inode_t *inode = get_inode(inum);
@@ -279,7 +279,7 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
    * you need to consider the situation when the size of buf 
    * is larger or smaller than the size of original inode
    */
-  printf("\tim: write_file %d\n", inum);
+  if(PRINT_LOG) printf("\tim: write_file %d\n", inum);
   inode_t *inode = get_inode(inum);
   if(inode != NULL){
     // write buf to blocks of inode inum
@@ -298,7 +298,7 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
           if(i < MAXFILE){
             // malloc block and record id in block pointed by idx NDIRECT
             if (!inode->blocks[NDIRECT]) {
-              printf("\tim: alloc new NDIRECT block\n");
+              if(PRINT_LOG) printf("\tim: alloc new NDIRECT block\n");
               inode->blocks[NDIRECT] = bm->alloc_block();
             };
             char buf[BLOCK_SIZE];
@@ -356,7 +356,7 @@ inode_manager::get_attr(uint32_t inum, extent_protocol::attr &a)
    * note: get the attributes of inode inum.
    * you can refer to "struct attr" in extent_protocol.h
    */
-  printf("\tim: get_attr %d\n", inum);
+  if(PRINT_LOG) printf("\tim: get_attr %d\n", inum);
   inode_t * inode = get_inode(inum);
   if(inode != NULL){
     a.type = inode->type;
@@ -377,7 +377,7 @@ inode_manager::remove_file(uint32_t inum)
    * note: you need to consider about both the data block and inode of the file
    */
 
-  printf("\tim: remove_file %d\n", inum);
+  if(PRINT_LOG) printf("\tim: remove_file %d\n", inum);
 
   inode_t *inode = get_inode(inum);
   if(inode != NULL){
