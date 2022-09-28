@@ -144,6 +144,25 @@ chfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
      * note: lookup is what you need to check if file exist;
      * after create file or dir, you must remember to modify the parent infomation.
      */
+    bool found = false;
+    inum inum_fd;
+    lookup(parent, name, found, inum_fd);
+    if(found) {
+      // file exist
+      return EXIST;
+    } else {
+      // create file
+      ec->create(extent_protocol::T_FILE, ino_out);
+
+      // modify the parent infomation to add entry
+      // format for directory: name/inum/name/inum/name/inum/
+      // as / can not be part of file name
+      std::string buf;
+      // read directory
+      ec->get(parent, buf);
+      buf += (std::string(name) + "/" + filename(ino_out) + "/");
+      ec->put(parent, buf);
+    }
 
     return r;
 }
@@ -159,6 +178,26 @@ chfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
      * after create file or dir, you must remember to modify the parent infomation.
      */
 
+    bool found = false;
+    inum inum_fd;
+    lookup(parent, name, found, inum_fd);
+    if(found) {
+      // dir exist
+      return EXIST;
+    } else {
+      // create dir
+      ec->create(extent_protocol::T_DIR, ino_out);
+
+      // modify the parent infomation to add entry
+      // format for directory: name/inum/name/inum/name/inum/
+      // as / can not be part of file name
+      std::string buf;
+      // read directory
+      ec->get(parent, buf);
+      buf += (std::string(name) + "/" + filename(ino_out) + "/");
+      ec->put(parent, buf);
+    }
+
     return r;
 }
 
@@ -173,6 +212,22 @@ chfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
      * you should design the format of directory content.
      */
 
+    // read parent dir
+    std::list<dirent> list;
+    readdir(parent, list);
+
+    // check file name in list
+    for(dirent d : list){
+      if(d.name.c_str() == name){
+        // found
+        found = true;
+        ino_out = d.inum;
+        return r;
+      }
+    }
+
+    // not found
+    found = false;
     return r;
 }
 
@@ -187,6 +242,28 @@ chfs_client::readdir(inum dir, std::list<dirent> &list)
      * and push the dirents to the list.
      */
 
+    // format for directory: name/inum/name/inum/name/inum/
+    // as / can not be part of file name
+
+    std::string buf;
+    // read directory
+    ec->get(dir, buf);
+
+    // parse content of dir
+    size_t name_begin = 0;
+    size_t name_end = buf.find('/', name_begin);
+    size_t inum_begin, inum_end;
+    while(name_end != std::string::npos){
+      inum_begin = name_end + 1;
+      inum_end = buf.find('/', inum_begin);
+      struct dirent d;
+      d.name = buf.substr(name_begin, name_end - name_begin);
+      d.inum = n2i(buf.substr(inum_begin, inum_end - inum_begin));
+      // add name inum pair to list
+      list.push_back(d);
+      name_begin = inum_end + 1;
+      name_end = buf.find('/', name_begin);
+    }
     return r;
 }
 
