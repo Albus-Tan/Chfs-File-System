@@ -82,6 +82,24 @@ chfs_client::isdir(inum inum)
     return false;
 }
 
+bool
+chfs_client::issymlink(inum inum)
+{
+  extent_protocol::attr a;
+
+  if (ec->getattr(inum, a) != extent_protocol::OK) {
+    printf("error getting attr\n");
+    return false;
+  }
+
+  if (a.type == extent_protocol::T_SYMLINK) {
+    printf("issymlink: %lld is a symlink\n", inum);
+    return true;
+  }
+  printf("issymlink: %lld is not a symlink\n", inum);
+  return false;
+}
+
 int
 chfs_client::getfile(inum inum, fileinfo &fin)
 {
@@ -220,6 +238,37 @@ chfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
     }
 
     return r;
+}
+
+int
+chfs_client::symlink(inum parent, const char *name, const char *link, inum &ino_out)
+{
+  int r = OK;
+
+  bool found = false;
+  inum inum_fd;
+  lookup(parent, name, found, inum_fd);
+  if(found) {
+    // symlink exist
+    return EXIST;
+  } else {
+    // create symlink ( store it just under path of name )
+    // pick an inum to store
+    ec->create(extent_protocol::T_SYMLINK, ino_out);
+    // add symlink content ( link str )
+    ec->put(ino_out, std::string(link));
+
+    // modify the parent infomation to add entry
+    // format for directory: name/inum/name/inum/name/inum/
+    // as / can not be part of file name
+    std::string buf = "";
+    // read directory
+    ec->get(parent, buf);
+    buf += (std::string(name) + "/" + filename(ino_out) + "/");
+    ec->put(parent, buf);
+  }
+
+  return r;
 }
 
 int
@@ -422,4 +471,12 @@ int chfs_client::unlink(inum parent,const char *name)
 
     return r;
 }
+
+int chfs_client::readlink(inum inode,std::string &buf)
+{
+  // read from inode, fill link into buf
+  ec->get(inode, buf);
+  return OK;
+}
+
 
