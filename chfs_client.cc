@@ -153,6 +153,7 @@ chfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
     bool found = false;
     inum inum_fd;
     lookup(parent, name, found, inum_fd);
+    std::string buf = "";
     if(found) {
       // file exist
       return EXIST;
@@ -163,12 +164,13 @@ chfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
       // modify the parent infomation to add entry
       // format for directory: name/inum/name/inum/name/inum/
       // as / can not be part of file name
-      std::string buf;
       // read directory
       ec->get(parent, buf);
       buf += (std::string(name) + "/" + filename(ino_out) + "/");
       ec->put(parent, buf);
     }
+
+    if(CHFS_CLIENT_LOG) printf("chfs_client::create: create file, parent dir content:\n %s\n" , buf.c_str());
 
     return r;
 }
@@ -197,7 +199,7 @@ chfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
       // modify the parent infomation to add entry
       // format for directory: name/inum/name/inum/name/inum/
       // as / can not be part of file name
-      std::string buf;
+      std::string buf = "";
       // read directory
       ec->get(parent, buf);
       buf += (std::string(name) + "/" + filename(ino_out) + "/");
@@ -218,13 +220,23 @@ chfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
      * you should design the format of directory content.
      */
 
+    if(CHFS_CLIENT_LOG) printf("chfs_client::lookup: step in\n");
+
     // read parent dir
     std::list<dirent> list;
     readdir(parent, list);
 
+    if(CHFS_CLIENT_LOG) printf("chfs_client::lookup: parent directory std::list<dirent> content\n");
+
     // check file name in list
     for(dirent d : list){
-      if(d.name.c_str() == name){
+      if(CHFS_CLIENT_LOG) {
+        printf("chfs_client::lookup: file name: %s, inum %llu\n", d.name.c_str(), d.inum);
+      }
+      // const char *name, string d.name
+      // !!! use == to judge equal char * does not mean strcmp
+      //if(d.name.c_str() == name){
+      if(strcmp(d.name.c_str(), name) == 0){
         // found
         found = true;
         ino_out = d.inum;
@@ -251,9 +263,13 @@ chfs_client::readdir(inum dir, std::list<dirent> &list)
     // format for directory: name/inum/name/inum/name/inum/
     // as / can not be part of file name
 
-    std::string buf;
+    if(CHFS_CLIENT_LOG) printf("chfs_client::readdir: step in\n");
+
+    std::string buf = "";
     // read directory
     ec->get(dir, buf);
+
+    if(CHFS_CLIENT_LOG) printf("chfs_client::readdir: buf content\n%s\n", buf.c_str());
 
     // parse content of dir
     size_t name_begin = 0;
@@ -263,7 +279,9 @@ chfs_client::readdir(inum dir, std::list<dirent> &list)
       inum_begin = name_end + 1;
       inum_end = buf.find('/', inum_begin);
       struct dirent d;
-      d.name = buf.substr(name_begin, name_end - name_begin);
+      std::string tmp = buf.substr(name_begin, name_end - name_begin);
+      d.name = tmp;
+      if(CHFS_CLIENT_LOG) printf("chfs_client::readdir: file name from %zu to %zu is %s\n", name_begin, name_end, tmp.c_str());
       d.inum = n2i(buf.substr(inum_begin, inum_end - inum_begin));
       // add name inum pair to list
       list.push_back(d);
@@ -288,13 +306,13 @@ chfs_client::read(inum ino, size_t size, off_t off, std::string &data)
 
     // offset 超出长度范围
     if(off > buf_size){
-      printf("chfs_client: FAILED, read offset larger than file size");
+      printf("chfs_client: FAILED, read offset larger than file size\n");
       data = "";
       return r;
     }
     // offset + size 超出长度范围
     if((off + size) > buf_size){
-      printf("chfs_client: read size + offset larger than file size");
+      printf("chfs_client: read size + offset larger than file size\n");
       data = buf.substr(off);
       return r;
     }

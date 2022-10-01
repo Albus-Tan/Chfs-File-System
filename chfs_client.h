@@ -6,6 +6,7 @@
 #include "extent_client.h"
 #include <vector>
 
+#define CHFS_CLIENT_LOG 0
 
 class chfs_client {
   extent_client *ec;
