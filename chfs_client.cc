@@ -53,7 +53,7 @@ chfs_client::isfile(inum inum)
         printf("isfile: %lld is a file\n", inum);
         return true;
     } 
-    printf("isfile: %lld is a dir\n", inum);
+    printf("isfile: %lld is not a file\n", inum);
     return false;
 }
 /** Your code here for Lab...
@@ -66,7 +66,20 @@ bool
 chfs_client::isdir(inum inum)
 {
     // Oops! is this still correct when you implement symlink?
-    return ! isfile(inum);
+    // return ! isfile(inum);
+  extent_protocol::attr a;
+
+    if (ec->getattr(inum, a) != extent_protocol::OK) {
+      printf("error getting attr\n");
+      return false;
+    }
+
+    if (a.type == extent_protocol::T_DIR) {
+      printf("isdir: %lld is a dir\n", inum);
+      return true;
+    }
+    printf("isdir: %lld is not a dir\n", inum);
+    return false;
 }
 
 int
@@ -384,6 +397,28 @@ int chfs_client::unlink(inum parent,const char *name)
      * note: you should remove the file using ec->remove,
      * and update the parent directory content.
      */
+    bool found = false;
+    inum inum_fd;
+    lookup(parent, name, found, inum_fd);
+    if(found){
+
+      // remove the file using ec->remove
+      ec->remove(inum_fd);
+
+      // update parent directory content
+      std::string buf;
+      ec->get(parent, buf);
+      size_t entry_start = buf.find(name);
+      size_t name_end = buf.find('/', entry_start);
+      // !!! find from name_end + 1
+      size_t entry_end = buf.find('/', name_end + 1);
+      // also delete the / at end
+      buf.erase(entry_start, entry_end - entry_start + 1);
+      ec->put(parent, buf);
+    } else {
+      // not found
+      printf("chfs_client::unlink: file %s not found\n", name);
+    }
 
     return r;
 }
