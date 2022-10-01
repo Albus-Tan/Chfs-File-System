@@ -130,6 +130,12 @@ chfs_client::setattr(inum ino, size_t size)
      * note: get the content of inode ino, and modify its content
      * according to the size (<, =, or >) content length.
      */
+    std::string buf;
+    // get the content of inode ino
+    ec->get(ino, buf);
+    // modify its content according to the size (<, =, or >) content length.
+    buf.resize(size);
+    ec->put(ino, buf);
 
     return r;
 }
@@ -276,7 +282,24 @@ chfs_client::read(inum ino, size_t size, off_t off, std::string &data)
      * your code goes here.
      * note: read using ec->get().
      */
+    std::string buf;
+    ec->get(ino, buf);
+    size_t buf_size = buf.size();
 
+    // offset 超出长度范围
+    if(off > buf_size){
+      printf("chfs_client: FAILED, read offset larger than file size");
+      data = "";
+      return r;
+    }
+    // offset + size 超出长度范围
+    if((off + size) > buf_size){
+      printf("chfs_client: read size + offset larger than file size");
+      data = buf.substr(off);
+      return r;
+    }
+    // offset + size 在长度范围之内
+    data = buf.substr(off, size);
     return r;
 }
 
@@ -291,6 +314,45 @@ chfs_client::write(inum ino, size_t size, off_t off, const char *data,
      * note: write using ec->put().
      * when off > length of original file, fill the holes with '\0'.
      */
+    std::string buf;
+    ec->get(ino, buf);
+    size_t buf_size = buf.size();
+
+    // when off > length of original file, fill the holes with '\0'.
+    if(off > buf_size){
+      // make file buf larger
+      buf.resize(off + size);
+      // fill the holes with '\0'
+      for(size_t i = buf_size; i < off; ++i){
+        buf[i] = '\0';
+      }
+      // fill with data
+      for(size_t i = off; i < off + size; ++i){
+        buf[i] = data[i - off];
+      }
+      bytes_written = size;
+      ec->put(ino, buf);
+      return r;
+    }
+    // off + size > buf_size, off <= buf_size
+    if(off + size > buf_size){
+      // make file buf larger
+      buf.resize(off + size);
+      // fill with data
+      for(size_t i = off; i < off + size; ++i){
+        buf[i] = data[i - off];
+      }
+      bytes_written = size;
+      ec->put(ino, buf);
+      return r;
+    }
+    // off + size <= buf_size
+    // fill with data
+    for(size_t i = off; i < off + size; ++i){
+      buf[i] = data[i - off];
+    }
+    bytes_written = size;
+    ec->put(ino, buf);
 
     return r;
 }

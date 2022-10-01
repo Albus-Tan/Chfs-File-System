@@ -125,10 +125,18 @@ fuseserver_setattr(fuse_req_t req, fuse_ino_t ino, struct stat *attr,
     if (FUSE_SET_ATTR_SIZE & to_set) {
         printf("   fuseserver_setattr set size to %zu\n", attr->st_size);
 
-#if 0
+#if 1
     struct stat st;
+    chfs_client::status ret;
     // Change the above line to "#if 1", and your code goes here
     // Note: fill st using getattr before fuse_reply_attr
+    chfs->setattr(ino,attr->st_size);
+    ret = getattr(ino, st);
+    if(ret != chfs_client::OK){
+      fuse_reply_err(req, ENOENT);
+      return;
+    }
+    fuse_reply_attr(req, &st, 0);
 #else
     fuse_reply_err(req, ENOSYS);
 #endif
@@ -154,8 +162,14 @@ void
 fuseserver_read(fuse_req_t req, fuse_ino_t ino, size_t size,
         off_t off, struct fuse_file_info *fi)
 {
-#if 0
+#if 1
     // Change the above "#if 0" to "#if 1", and your code goes here
+    std::string buf;
+    if(chfs->read(ino, size, off, buf) == chfs_client::OK){
+        fuse_reply_buf(req, buf.data(), buf.size());
+    } else {
+        fuse_reply_err(req, ENOSYS);
+    }
 #else
     fuse_reply_err(req, ENOSYS);
 #endif
@@ -183,8 +197,14 @@ fuseserver_write(fuse_req_t req, fuse_ino_t ino,
         const char *buf, size_t size, off_t off,
         struct fuse_file_info *fi)
 {
-#if 0
+#if 1
     // Change the above line to "#if 1", and your code goes here
+    size_t bytes_written = size;
+    if(chfs->write(ino, size, off, buf, bytes_written) == chfs_client::OK){
+        fuse_reply_write(req, bytes_written);
+    } else {
+        fuse_reply_err(req, ENOSYS);
+    }
 #else
     fuse_reply_err(req, ENOSYS);
 #endif
