@@ -6,6 +6,8 @@
 #include <stdint.h>
 #include "extent_protocol.h"
 
+#define PRINT_LOG 0
+
 #define DISK_SIZE  1024*1024*16
 #define BLOCK_SIZE 512
 #define BLOCK_NUM  (DISK_SIZE/BLOCK_SIZE)
@@ -81,6 +83,7 @@ class inode_manager {
   block_manager *bm;
   struct inode* get_inode(uint32_t inum);
   void put_inode(uint32_t inum, struct inode *ino);
+  uint32_t get_block_id(uint32_t i, inode_t *inode);
 
  public:
   inode_manager();

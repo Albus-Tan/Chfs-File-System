@@ -59,16 +59,31 @@ getattr(chfs_client::inum inum, struct stat &st)
         st.st_size = info.size;
         printf("   getattr -> %llu\n", info.size);
     } else {
-        chfs_client::dirinfo info;
-        ret = chfs->getdir(inum, info);
-        if(ret != chfs_client::OK)
+        if(chfs->isdir(inum)){
+          chfs_client::dirinfo info;
+          ret = chfs->getdir(inum, info);
+          if(ret != chfs_client::OK)
             return ret;
-        st.st_mode = S_IFDIR | 0777;
-        st.st_nlink = 2;
-        st.st_atime = info.atime;
-        st.st_mtime = info.mtime;
-        st.st_ctime = info.ctime;
-        printf("   getattr -> %lu %lu %lu\n", info.atime, info.mtime, info.ctime);
+          st.st_mode = S_IFDIR | 0777;
+          st.st_nlink = 2;
+          st.st_atime = info.atime;
+          st.st_mtime = info.mtime;
+          st.st_ctime = info.ctime;
+          printf("   getattr -> %lu %lu %lu\n", info.atime, info.mtime, info.ctime);
+        } else {
+          // symlink
+          chfs_client::fileinfo info;
+          ret = chfs->getfile(inum, info);
+          if(ret != chfs_client::OK)
+            return ret;
+          st.st_mode = S_IFLNK | 0777;
+          st.st_nlink = 1;
+          st.st_atime = info.atime;
+          st.st_mtime = info.mtime;
+          st.st_ctime = info.ctime;
+          st.st_size = info.size;
+          printf("   getattr -> symlink %llu\n", info.size);
+        }
     }
     return chfs_client::OK;
 }
@@ -125,10 +140,18 @@ fuseserver_setattr(fuse_req_t req, fuse_ino_t ino, struct stat *attr,
     if (FUSE_SET_ATTR_SIZE & to_set) {
         printf("   fuseserver_setattr set size to %zu\n", attr->st_size);
 
-#if 0
+#if 1
     struct stat st;
+    chfs_client::status ret;
     // Change the above line to "#if 1", and your code goes here
     // Note: fill st using getattr before fuse_reply_attr
+    chfs->setattr(ino,attr->st_size);
+    ret = getattr(ino, st);
+    if(ret != chfs_client::OK){
+      fuse_reply_err(req, ENOENT);
+      return;
+    }
+    fuse_reply_attr(req, &st, 0);
 #else
     fuse_reply_err(req, ENOSYS);
 #endif
@@ -154,8 +177,14 @@ void
 fuseserver_read(fuse_req_t req, fuse_ino_t ino, size_t size,
         off_t off, struct fuse_file_info *fi)
 {
-#if 0
+#if 1
     // Change the above "#if 0" to "#if 1", and your code goes here
+    std::string buf;
+    if(chfs->read(ino, size, off, buf) == chfs_client::OK){
+        fuse_reply_buf(req, buf.data(), buf.size());
+    } else {
+        fuse_reply_err(req, ENOSYS);
+    }
 #else
     fuse_reply_err(req, ENOSYS);
 #endif
@@ -183,8 +212,14 @@ fuseserver_write(fuse_req_t req, fuse_ino_t ino,
         const char *buf, size_t size, off_t off,
         struct fuse_file_info *fi)
 {
-#if 0
+#if 1
     // Change the above line to "#if 1", and your code goes here
+    size_t bytes_written = size;
+    if(chfs->write(ino, size, off, buf, bytes_written) == chfs_client::OK){
+        fuse_reply_write(req, bytes_written);
+    } else {
+        fuse_reply_err(req, ENOSYS);
+    }
 #else
     fuse_reply_err(req, ENOSYS);
 #endif
@@ -384,11 +419,54 @@ fuseserver_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name,
     // Suppress compiler warning of unused e.
     (void) e;
 
-#if 0
+#if 1
     // Change the above line to "#if 1", and your code goes here
+    chfs_client::status ret;
+    if( (ret = fuseserver_createhelper( parent, name, mode, &e, extent_protocol::T_DIR)) == chfs_client::OK ) {
+      fuse_reply_entry(req, &e);
+      printf("OK: create returns.\n");
+    } else {
+      if (ret == chfs_client::EXIST) {
+        fuse_reply_err(req, EEXIST);
+      }else{
+        fuse_reply_err(req, ENOENT);
+      }
+    }
 #else
     fuse_reply_err(req, ENOSYS);
 #endif
+
+}
+
+
+void
+fuseserver_symlink(fuse_req_t req, const char *link, fuse_ino_t parent, const char *name)
+{
+  struct fuse_entry_param e;
+  // In chfs, timeouts are always set to 0.0, and generations are always set to 0
+  e.attr_timeout = 0.0;
+  e.entry_timeout = 0.0;
+  e.generation = 0;
+
+  chfs_client::inum inum;
+  chfs_client::status ret;
+  if( (ret = chfs->symlink( parent, name, link, inum)) == chfs_client::OK ) {
+    e.ino = inum;
+    ret = getattr(inum, e.attr);
+    if (ret != chfs_client::OK){
+      fuse_reply_err(req, ENOENT);
+      return;
+    } else {
+      fuse_reply_entry(req, &e);
+      return;
+    }
+  } else {
+    if (ret == chfs_client::EXIST) {
+      fuse_reply_err(req, EEXIST);
+    }else{
+      fuse_reply_err(req, ENOENT);
+    }
+  }
 
 }
 
@@ -412,6 +490,17 @@ fuseserver_unlink(fuse_req_t req, fuse_ino_t parent, const char *name)
             fuse_reply_err(req, ENOTEMPTY);
         }
     }
+}
+
+void
+fuseserver_readlink(fuse_req_t req, fuse_ino_t ino)
+{
+  std::string buf;
+  if (chfs->readlink(ino, buf) != chfs_client::OK) {
+    fuse_reply_err(req, ENOENT);
+    return;
+  }
+  fuse_reply_readlink(req, buf.c_str());
 }
 
 void
@@ -476,6 +565,8 @@ main(int argc, char *argv[])
      * routines here to implement symbolic link,
      * rmdir, etc.
      * */
+    fuseserver_oper.symlink    = fuseserver_symlink;
+    fuseserver_oper.readlink   = fuseserver_readlink;
 
     const char *fuse_argv[20];
     int fuse_argc = 0;
