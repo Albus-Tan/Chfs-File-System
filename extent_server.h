@@ -10,6 +10,8 @@
 #include "inode_manager.h"
 #include "persister.h"
 
+#define EXTENT_SERVER_DEBUG 1
+
 class extent_server {
  protected:
 #if 0
