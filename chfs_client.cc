@@ -388,10 +388,14 @@ chfs_client::read(inum ino, size_t size, off_t off, std::string &data)
     if((off + size) > buf_size){
       printf("chfs_client: read size + offset larger than file size\n");
       data = buf.substr(off);
+      printf("chfs_client: data %s\n", data);
       return r;
     }
     // offset + size 在长度范围之内
     data = buf.substr(off, size);
+
+    // data = std::string(buf.begin() + off, buf.begin() + size + off);
+
     return r;
 }
 
