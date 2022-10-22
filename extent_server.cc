@@ -147,6 +147,11 @@ void extent_server::log_create(uint32_t type, extent_protocol::extentid_t &id)
 
 void extent_server::log_put(extent_protocol::extentid_t id, std::string buf)
 {
+
+#if EXTENT_SERVER_DEBUG
+  std::cout << "EXTENT_SERVER log_put: id " << id << " buf \n" << buf << std::endl;
+#endif
+
   chfs_command command;
   command.type = chfs_command::CMD_PUT;
   command.params_size = sizeof(extent_protocol::extentid_t)+buf.size();
@@ -215,7 +220,9 @@ void extent_server::redo_create(char* params_buf)
   copied_size += sizeof(uint32_t);
   memcpy(reinterpret_cast<char *>(&id), params_buf + copied_size,  sizeof(extent_protocol::extentid_t));
 
-  im->alloc_inode_appointed(type, id);
+  // im->alloc_inode_appointed(type, id);
+  // im->alloc_inode(type);
+  create(type, id);
 
   free(params_buf);
 }

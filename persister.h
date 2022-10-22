@@ -94,7 +94,23 @@ public:
       std::cout << "TYPE " << type << ", "
                 << "TXID " << id << ", "
                 << "PREV_ADDR " << prev << ", "
-                << "PARA_SIZE " << params_size << std::endl;
+                << "PARA_SIZE " << params_size;
+      if(type == CMD_PUT){
+
+        extent_protocol::extentid_t inum;
+        char *buf_ptr = (char *)malloc(params_size - sizeof(extent_protocol::extentid_t));
+
+        uint64_t copied_size = 0;
+        memcpy(reinterpret_cast<char *>(&inum), params_buf + copied_size, sizeof(extent_protocol::extentid_t));
+        copied_size += sizeof(extent_protocol::extentid_t);
+        memcpy(buf_ptr, params_buf + copied_size, params_size - sizeof(extent_protocol::extentid_t));
+
+        std::cout << ", INUM " << inum << ", " << std::endl << "BUF " << buf_ptr << std::endl;
+
+        free(buf_ptr);
+      } else {
+        std::cout << std::endl;
+      }
     }
 };
 
@@ -163,12 +179,17 @@ persister<command>::~persister() {
 template<typename command>
 void persister<command>::append_log(command& log) {
     // Your code here for lab2A
-    char buf[MAX_LOG_SZ];
+    char* buf = (char *) malloc(log.size());
     log.format_log(buf);
 
     std::ofstream ostrm(file_path_logfile, std::ios::app | std::ios::binary);
     ostrm.write(buf, log.size());
+
+    ostrm.write("\n",1);
+
     ostrm.close();
+
+    free(buf);
 }
 
 template<typename command>
@@ -196,13 +217,16 @@ void persister<command>::restore_logdata() {
       return;
     }
 
+    char c[1];
     while(!istrm.eof()){
       command log;
       log.restore_log(istrm);
       log_entries.push_back(log);
+      istrm.read(c,1);
     }
 
     istrm.close();
+
 };
 
 template<typename command>
