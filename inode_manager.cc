@@ -135,6 +135,34 @@ inode_manager::alloc_inode(uint32_t type)
   return -1;
 }
 
+uint32_t
+inode_manager::alloc_inode_appointed(uint32_t type, uint32_t idx)
+{
+  if(PRINT_LOG) printf("\tim: alloc_inode_appointed type %d inum %d\n", type, idx);
+
+  if(idx < 0 || idx >= INODE_NUM){
+    printf("\tim: ERROR alloc_inode_appointed inum %d OUT OF RANGE\n", idx);
+    assert(0);
+    return -1;
+  }
+
+  inode_t  *inode = get_inode(idx);
+  if(inode != NULL) {
+    printf("\tim: alloc_inode_appointed type %d inum %d has been allocated, now reallocate it\n", type, idx);
+    free(inode);
+  }  // reallocate for create
+  inode = (inode_t *)malloc(sizeof(inode_t));
+  bzero(inode, sizeof(inode_t));
+  inode->type = type;
+  inode->atime = time(NULL);
+  inode->mtime = time(NULL);
+  inode->ctime = time(NULL);
+  put_inode(idx, inode);
+  free(inode);
+  return idx;
+
+}
+
 void
 inode_manager::free_inode(uint32_t inum)
 {

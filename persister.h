@@ -6,8 +6,11 @@
 #include <iostream>
 #include <fstream>
 #include "rpc.h"
+#include "utils.h"
 
 #define MAX_LOG_SZ 1024
+
+#define PRINT_DEBUG_INFO 1
 
 /*
  * Your code here for Lab2A:
@@ -20,26 +23,82 @@
  * 3. each chfs_commands contains transaction ID, command type, and other information.
  * 4. you can treat a chfs_command as a log entry.
  */
+
+
 class chfs_command {
 public:
     typedef unsigned long long txid_t;
     enum cmd_type {
         CMD_BEGIN = 0,
-        CMD_COMMIT
-
+        CMD_COMMIT,
+        CMD_CREATE,
+        CMD_PUT,
+        CMD_GET,
+        CMD_GETATTR,
+        CMD_REMOVE,
     };
+
+
+    // static txid_t next_txid;
 
     cmd_type type = CMD_BEGIN;
     txid_t id = 0;
+
+    // Pointer to previous record in this transaction
+    chfs_command* prev = nullptr;
+
+    // size of all params
+    uint64_t params_size = 0;
+
+    // params content
+    char* params_buf = nullptr;
 
     // constructor
     chfs_command() {}
 
     uint64_t size() const {
-        uint64_t s = sizeof(cmd_type) + sizeof(txid_t);
+      uint64_t s = sizeof(cmd_type) + sizeof(txid_t) + sizeof(chfs_command*) + sizeof(uint64_t) + params_size;
         return s;
     }
+
+
+    // LOG format
+    // cmd_type txid_t chfs_command* params_size params_buf
+    void format_log(char *buf) {
+      uint64_t copied_size = 0;
+
+      memcpy(buf + copied_size, reinterpret_cast<char *>(&type), sizeof(cmd_type));
+      copied_size += sizeof(cmd_type);
+      memcpy(buf + copied_size, reinterpret_cast<char *>(&id), sizeof(txid_t));
+      copied_size += sizeof(txid_t);
+      memcpy(buf + copied_size, reinterpret_cast<char *>(&prev), sizeof(chfs_command *));
+      copied_size += sizeof(chfs_command *);
+      memcpy(buf + copied_size, reinterpret_cast<char *>(&params_size), sizeof(uint64_t));
+      copied_size += sizeof(uint64_t);
+      memcpy(buf + copied_size, params_buf, params_size);
+    }
+
+    void restore_log(std::ifstream &istrm){
+      istrm.read(reinterpret_cast<char *>(&type), sizeof(cmd_type));
+      istrm.read(reinterpret_cast<char *>(&id), sizeof(txid_t));
+      istrm.read(reinterpret_cast<char *>(&prev), sizeof(chfs_command *));
+      istrm.read(reinterpret_cast<char *>(&params_size), sizeof(uint64_t));
+      params_buf = (char *)malloc(params_size);
+      istrm.read(params_buf, params_size);
+#if PRINT_DEBUG_INFO
+      print_cmd_info();
+#endif
+    }
+
+    void print_cmd_info(){
+      std::cout << "TYPE " << type << ", "
+                << "TXID " << id << ", "
+                << "PREV_ADDR " << prev << ", "
+                << "PARA_SIZE " << params_size << std::endl;
+    }
 };
+
+
 
 /*
  * Your code here for Lab2A:
@@ -59,13 +118,17 @@ public:
 
     // persist data into solid binary file
     // You may modify parameters in these functions
-    void append_log(const command& log);
+    void append_log(command& log);
     void checkpoint();
 
     // restore data from solid binary file
     // You may modify parameters in these functions
     void restore_logdata();
     void restore_checkpoint();
+
+    std::vector<command> get_restored_log_entries(){
+      return log_entries;
+    }
 
 private:
     std::mutex mtx;
@@ -79,6 +142,12 @@ private:
 
 template<typename command>
 persister<command>::persister(const std::string& dir){
+
+    // check if dir exists
+    if(!utils::dirExists(dir)) {
+      utils::mkdir(dir.c_str());
+    }
+
     // DO NOT change the file names here
     file_dir = dir;
     file_path_checkpoint = file_dir + "/checkpoint.bin";
@@ -92,9 +161,14 @@ persister<command>::~persister() {
 }
 
 template<typename command>
-void persister<command>::append_log(const command& log) {
+void persister<command>::append_log(command& log) {
     // Your code here for lab2A
+    char buf[MAX_LOG_SZ];
+    log.format_log(buf);
 
+    std::ofstream ostrm(file_path_logfile, std::ios::app | std::ios::binary);
+    ostrm.write(buf, log.size());
+    ostrm.close();
 }
 
 template<typename command>
@@ -107,6 +181,28 @@ template<typename command>
 void persister<command>::restore_logdata() {
     // Your code here for lab2A
 
+    log_entries.clear();
+
+    if(!utils::dirExists(file_dir)) {
+      return;
+    }
+
+    std::ifstream istrm(file_path_logfile, std::ios::binary);
+    // check if file exists
+    if(!istrm.is_open()){
+#if PRINT_DEBUG_INFO
+      std::cout << "restore_logdata: file_path_logfile doesn't exist" << std::endl;
+#endif
+      return;
+    }
+
+    while(!istrm.eof()){
+      command log;
+      log.restore_log(istrm);
+      log_entries.push_back(log);
+    }
+
+    istrm.close();
 };
 
 template<typename command>

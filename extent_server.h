@@ -22,6 +22,10 @@ class extent_server {
   inode_manager *im;
   chfs_persister *_persister;
 
+ private:
+  void redo_log_commands();
+  bool on_redoing_logs = false;
+
  public:
   extent_server();
 
@@ -32,6 +36,18 @@ class extent_server {
   int remove(extent_protocol::extentid_t id, int &);
 
   // Your code here for lab2A: add logging APIs
+  void log_create(uint32_t type, extent_protocol::extentid_t &id);
+  void log_put(extent_protocol::extentid_t id, std::string);
+  void log_get(extent_protocol::extentid_t id);
+  void log_getattr(extent_protocol::extentid_t id);
+  void log_remove(extent_protocol::extentid_t id);
+
+  void redo_create(char* params_buf);
+  void redo_put(char* params_buf, uint64_t params_size);
+  void redo_get(char* params_buf);
+  void redo_getattr(char* params_buf);
+  void redo_remove(char* params_buf);
+
 };
 
 #endif 
