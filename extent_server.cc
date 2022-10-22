@@ -154,7 +154,7 @@ void extent_server::log_put(extent_protocol::extentid_t id, std::string buf)
 
   chfs_command command;
   command.type = chfs_command::CMD_PUT;
-  command.params_size = sizeof(extent_protocol::extentid_t)+buf.size();
+  command.params_size = sizeof(extent_protocol::extentid_t) + buf.size();
   command.params_buf = (char *)malloc(command.params_size);
 
   uint64_t copied_size = 0;
@@ -231,12 +231,13 @@ void extent_server::redo_put(char* params_buf, uint64_t params_size)
 {
   extent_protocol::extentid_t id;
   int i;
-  char *buf_ptr = (char *)malloc(params_size - sizeof(extent_protocol::extentid_t));
+  char *buf_ptr = (char *)malloc(params_size - sizeof(extent_protocol::extentid_t) + 1);
 
   uint64_t copied_size = 0;
   memcpy(reinterpret_cast<char *>(&id), params_buf + copied_size, sizeof(extent_protocol::extentid_t));
   copied_size += sizeof(extent_protocol::extentid_t);
   memcpy(buf_ptr,params_buf + copied_size, params_size - sizeof(extent_protocol::extentid_t));
+  memcpy(buf_ptr + params_size - sizeof(extent_protocol::extentid_t), "\0", 1);
 
   // redo
   std::string buf(buf_ptr);

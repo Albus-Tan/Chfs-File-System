@@ -98,12 +98,13 @@ public:
       if(type == CMD_PUT){
 
         extent_protocol::extentid_t inum;
-        char *buf_ptr = (char *)malloc(params_size - sizeof(extent_protocol::extentid_t));
+        char *buf_ptr = (char *)malloc(params_size - sizeof(extent_protocol::extentid_t) + 1);
 
         uint64_t copied_size = 0;
         memcpy(reinterpret_cast<char *>(&inum), params_buf + copied_size, sizeof(extent_protocol::extentid_t));
         copied_size += sizeof(extent_protocol::extentid_t);
         memcpy(buf_ptr, params_buf + copied_size, params_size - sizeof(extent_protocol::extentid_t));
+        memcpy(buf_ptr + params_size - sizeof(extent_protocol::extentid_t), "\0", 1);
 
         std::cout << ", INUM " << inum << ", " << std::endl << "BUF " << buf_ptr << std::endl;
 

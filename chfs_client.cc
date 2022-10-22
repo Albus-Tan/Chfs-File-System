@@ -207,11 +207,12 @@ chfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
       // as / can not be part of file name
       // read directory
       ec->get(parent, buf);
+      if(CHFS_CLIENT_LOG) printf("chfs_client::create: create file, get parent dir content:\n %s\n" , buf.c_str());
       buf += (std::string(name) + "/" + filename(ino_out) + "/");
       ec->put(parent, buf);
     }
 
-    if(CHFS_CLIENT_LOG) printf("chfs_client::create: create file, parent dir content:\n %s\n" , buf.c_str());
+    if(CHFS_CLIENT_LOG) printf("chfs_client::create: create file, put parent dir content:\n %s\n" , buf.c_str());
 
     return r;
 }
