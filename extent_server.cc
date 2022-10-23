@@ -17,6 +17,8 @@ extent_server::extent_server()
   _persister = new chfs_persister("log"); // DO NOT change the dir name here
 
   // Your code here for Lab2A: recover data on startup
+  _persister->clear_restored_log_entries();
+  _persister->restore_checkpoint();
   _persister->restore_logdata();
   redo_log_commands();
 }

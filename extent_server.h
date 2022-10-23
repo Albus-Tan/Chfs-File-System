@@ -11,7 +11,7 @@
 #include "inode_manager.h"
 #include "persister.h"
 
-#define EXTENT_SERVER_DEBUG 1
+#define EXTENT_SERVER_DEBUG 0
 
 class extent_server {
  protected:

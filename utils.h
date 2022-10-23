@@ -139,5 +139,23 @@ namespace utils{
     }
 
 
+    static inline size_t get_file_size(const char *path) {
+
+      if (path == NULL) {
+        return 0;
+      }
+
+      // 这是一个存储文件(夹)信息的结构体，其中有文件大小和创建时间、访问时间、修改时间等
+      struct stat statbuf;
+
+      // 提供文件名字符串，获得文件属性结构体
+      stat(path, &statbuf);
+
+      // 获取文件大小
+      size_t filesize = statbuf.st_size;
+
+      return filesize;
+    }
+
     
 }

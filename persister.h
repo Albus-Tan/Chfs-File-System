@@ -10,7 +10,7 @@
 
 #define MAX_LOG_SZ 1024
 
-#define PRINT_DEBUG_INFO 1
+#define PRINT_DEBUG_INFO 0
 
 /*
  * Your code here for Lab2A:
@@ -142,6 +142,10 @@ public:
       return log_entries;
     }
 
+    void clear_restored_log_entries(){
+      log_entries.clear();
+    }
+
 private:
     std::mutex mtx;
     std::string file_dir;
@@ -178,6 +182,10 @@ void persister<command>::append_log(command& log) {
     char* buf = (char *) malloc(log.size());
     log.format_log(buf);
 
+    if(utils::get_file_size(file_path_logfile.c_str()) + log.size() + 1 >= MAX_LOG_SZ){
+      checkpoint();
+    }
+
     std::ofstream ostrm(file_path_logfile, std::ios::app | std::ios::binary);
     ostrm.write(buf, log.size());
 
@@ -194,13 +202,32 @@ template<typename command>
 void persister<command>::checkpoint() {
     // Your code here for lab2A
 
+    std::ifstream istrm(file_path_logfile, std::ios::binary);
+    std::ofstream ostrm(file_path_checkpoint, std::ios::app | std::ios::binary);
+
+    istrm.seekg(0, std::ios::end);
+    long long length = istrm.tellg();  // C++ 支持的最大索引位置
+    istrm.seekg(0);
+    char buf[MAX_LOG_SZ + 1];
+    while (length > 0)
+    {
+      int bufSize = length >= MAX_LOG_SZ ? MAX_LOG_SZ : length;
+      istrm.read(buf, bufSize);
+      ostrm.write(buf, bufSize);
+      length -= bufSize;
+    }
+
+    ostrm.flush();
+    ostrm.close();
+    istrm.close();
+
+    // clear log file
+    utils::rmfile(file_path_logfile.c_str());
 }
 
 template<typename command>
 void persister<command>::restore_logdata() {
     // Your code here for lab2A
-
-    log_entries.clear();
 
     if(!utils::dirExists(file_dir)) {
       return;
@@ -230,6 +257,29 @@ void persister<command>::restore_logdata() {
 template<typename command>
 void persister<command>::restore_checkpoint() {
     // Your code here for lab2A
+
+  if(!utils::dirExists(file_dir)) {
+    return;
+  }
+
+  std::ifstream istrm(file_path_checkpoint, std::ios::binary);
+  // check if file exists
+  if(!istrm.is_open()){
+#if PRINT_DEBUG_INFO
+    std::cout << "restore_checkpoint: file_path_checkpoint doesn't exist" << std::endl;
+#endif
+    return;
+  }
+
+  char c[1];
+  while(!istrm.eof()){
+    command log;
+    log.restore_log(istrm);
+    log_entries.push_back(log);
+    istrm.read(c,1);
+  }
+
+  istrm.close();
 
 };
 
