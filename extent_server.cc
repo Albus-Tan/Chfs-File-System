@@ -231,17 +231,24 @@ void extent_server::redo_put(char* params_buf, uint64_t params_size)
 {
   extent_protocol::extentid_t id;
   int i;
-  char *buf_ptr = (char *)malloc(params_size - sizeof(extent_protocol::extentid_t) + 1);
+  // char *buf_ptr = (char *)malloc(params_size - sizeof(extent_protocol::extentid_t) + 1);
+  std::string buf;
 
   uint64_t copied_size = 0;
   memcpy(reinterpret_cast<char *>(&id), params_buf + copied_size, sizeof(extent_protocol::extentid_t));
   copied_size += sizeof(extent_protocol::extentid_t);
-  memcpy(buf_ptr,params_buf + copied_size, params_size - sizeof(extent_protocol::extentid_t));
-  memcpy(buf_ptr + params_size - sizeof(extent_protocol::extentid_t), "\0", 1);
+  // memcpy(buf_ptr,params_buf + copied_size, params_size - sizeof(extent_protocol::extentid_t));
+  // memcpy(buf_ptr + params_size - sizeof(extent_protocol::extentid_t), "\0", 1);
+
+  buf.resize(params_size - sizeof(extent_protocol::extentid_t));
+  memcpy(reinterpret_cast<char *>(&buf[0]), params_buf + copied_size, buf.size());
 
   // redo
-  std::string buf(buf_ptr);
-  free(buf_ptr);
+  // do not directly use char* to construct string!
+  // may have \0 in the middle and end str early!
+  // need to check the size
+  // std::string buf(buf_ptr);
+  // free(buf_ptr);
   put(id, buf, i);
 
   free(params_buf);
