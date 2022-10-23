@@ -23,12 +23,42 @@ extent_server::extent_server()
 
 void extent_server::redo_log_commands()
 {
+
+#if EXTENT_SERVER_DEBUG
+  std::cout << "EXTENT_SERVER start redo_log_commands" << std::endl;
+#endif
+
+  // transaction id start from 1
+  // 0 represent belong to no transaction
   on_redoing_logs = true;
   std::vector<chfs_command> log_entries = _persister->get_restored_log_entries();
+  std::set<chfs_command::txid_t> txid_commit;
+
+  // traverse first time to get all committed txid in set
+  for(chfs_command log_entry : log_entries){
+    auto txid = log_entry.id;
+    if(txid != 0 && log_entry.type == chfs_command::CMD_COMMIT){
+#if EXTENT_SERVER_DEBUG
+      std::cout << "EXTENT_SERVER redo_log_commands: committed txid " << txid << std::endl;
+#endif
+      txid_commit.insert(txid);
+    }
+  }
+
+  // traverse second time to redo all txid committed
   for(chfs_command log_entry : log_entries){
     char *params_buf = log_entry.params_buf;
     uint64_t params_size = log_entry.params_size;
     assert(params_buf);
+
+    // if transaction the operation belonged uncommitted
+    if(log_entry.id != 0 && txid_commit.count(log_entry.id) == 0){
+#if EXTENT_SERVER_DEBUG
+      std::cout << "EXTENT_SERVER transaction uncommitted, txid " << log_entry.id << std::endl;
+#endif
+      continue;
+    }
+
     switch (log_entry.type) {
       case chfs_command::CMD_BEGIN:
         break;
@@ -53,24 +83,28 @@ void extent_server::redo_log_commands()
         assert(0);
     }
   }
+  // set next txid to max txid before + 1
+  if(!txid_commit.empty()){
+    next_txid = (*(txid_commit.end())) + 1;
+  }
   on_redoing_logs = false;
 }
 
-int extent_server::create(uint32_t type, extent_protocol::extentid_t &id)
+int extent_server::create(uint32_t type, extent_protocol::extentid_t &id, chfs_command::txid_t txid)
 {
 
   // alloc a new inode and return inum
   printf("extent_server: create inode\n");
   id = im->alloc_inode(type);
 
-  if(!on_redoing_logs) log_create(type, id);
+  if(!on_redoing_logs) log_create(type, id, txid);
 
   return extent_protocol::OK;
 }
 
-int extent_server::put(extent_protocol::extentid_t id, std::string buf, int &)
+int extent_server::put(extent_protocol::extentid_t id, std::string buf, int &, chfs_command::txid_t txid)
 {
-  if(!on_redoing_logs) log_put(id, buf);
+  if(!on_redoing_logs) log_put(id, buf, txid);
 
   id &= 0x7fffffff;
   
@@ -81,9 +115,9 @@ int extent_server::put(extent_protocol::extentid_t id, std::string buf, int &)
   return extent_protocol::OK;
 }
 
-int extent_server::get(extent_protocol::extentid_t id, std::string &buf)
+int extent_server::get(extent_protocol::extentid_t id, std::string &buf, chfs_command::txid_t txid)
 {
-  if(!on_redoing_logs) log_get(id);
+  if(!on_redoing_logs) log_get(id, txid);
   printf("extent_server: get %lld\n", id);
 
   id &= 0x7fffffff;
@@ -102,9 +136,9 @@ int extent_server::get(extent_protocol::extentid_t id, std::string &buf)
   return extent_protocol::OK;
 }
 
-int extent_server::getattr(extent_protocol::extentid_t id, extent_protocol::attr &a)
+int extent_server::getattr(extent_protocol::extentid_t id, extent_protocol::attr &a, chfs_command::txid_t txid)
 {
-  if(!on_redoing_logs) log_getattr(id);
+  if(!on_redoing_logs) log_getattr(id, txid);
   printf("extent_server: getattr %lld\n", id);
 
   id &= 0x7fffffff;
@@ -117,9 +151,9 @@ int extent_server::getattr(extent_protocol::extentid_t id, extent_protocol::attr
   return extent_protocol::OK;
 }
 
-int extent_server::remove(extent_protocol::extentid_t id, int &)
+int extent_server::remove(extent_protocol::extentid_t id, int &, chfs_command::txid_t txid)
 {
-  if(!on_redoing_logs) log_remove(id);
+  if(!on_redoing_logs) log_remove(id, txid);
   printf("extent_server: write %lld\n", id);
 
   id &= 0x7fffffff;
@@ -128,10 +162,11 @@ int extent_server::remove(extent_protocol::extentid_t id, int &)
   return extent_protocol::OK;
 }
 
-void extent_server::log_create(uint32_t type, extent_protocol::extentid_t &id)
+void extent_server::log_create(uint32_t type, extent_protocol::extentid_t &id, chfs_command::txid_t txid)
 {
   chfs_command command;
   command.type = chfs_command::CMD_CREATE;
+  command.id = txid;
   command.params_size = sizeof(extent_protocol::extentid_t)+ sizeof(uint32_t);
   command.params_buf = (char *)malloc(command.params_size);
 
@@ -145,7 +180,7 @@ void extent_server::log_create(uint32_t type, extent_protocol::extentid_t &id)
   free((command.params_buf));
 }
 
-void extent_server::log_put(extent_protocol::extentid_t id, std::string buf)
+void extent_server::log_put(extent_protocol::extentid_t id, std::string buf, chfs_command::txid_t txid)
 {
 
 #if EXTENT_SERVER_DEBUG
@@ -154,6 +189,7 @@ void extent_server::log_put(extent_protocol::extentid_t id, std::string buf)
 
   chfs_command command;
   command.type = chfs_command::CMD_PUT;
+  command.id = txid;
   command.params_size = sizeof(extent_protocol::extentid_t) + buf.size();
   command.params_buf = (char *)malloc(command.params_size);
 
@@ -167,10 +203,11 @@ void extent_server::log_put(extent_protocol::extentid_t id, std::string buf)
   free((command.params_buf));
 }
 
-void extent_server::log_get(extent_protocol::extentid_t id)
+void extent_server::log_get(extent_protocol::extentid_t id, chfs_command::txid_t txid)
 {
   chfs_command command;
   command.type = chfs_command::CMD_GET;
+  command.id = txid;
   command.params_size = sizeof(extent_protocol::extentid_t);
   command.params_buf = (char *)malloc(command.params_size);
 
@@ -181,11 +218,12 @@ void extent_server::log_get(extent_protocol::extentid_t id)
   free((command.params_buf));
 }
 
-void extent_server::log_getattr(extent_protocol::extentid_t id)
+void extent_server::log_getattr(extent_protocol::extentid_t id, chfs_command::txid_t txid)
 {
   chfs_command command;
   command.type = chfs_command::CMD_GETATTR;
   command.params_size = sizeof(extent_protocol::extentid_t);
+  command.id = txid;
   command.params_buf = (char *)malloc(command.params_size);
 
   memcpy((command.params_buf), reinterpret_cast<char *>(&id), sizeof(extent_protocol::extentid_t));
@@ -195,11 +233,12 @@ void extent_server::log_getattr(extent_protocol::extentid_t id)
   free((command.params_buf));
 }
 
-void extent_server::log_remove(extent_protocol::extentid_t id)
+void extent_server::log_remove(extent_protocol::extentid_t id, chfs_command::txid_t txid)
 {
   chfs_command command;
   command.type = chfs_command::CMD_REMOVE;
   command.params_size = sizeof(extent_protocol::extentid_t);
+  command.id = txid;
   command.params_buf = (char *)malloc(command.params_size);
 
   memcpy((command.params_buf), reinterpret_cast<char *>(&id), sizeof(extent_protocol::extentid_t));
@@ -220,9 +259,8 @@ void extent_server::redo_create(char* params_buf)
   copied_size += sizeof(uint32_t);
   memcpy(reinterpret_cast<char *>(&id), params_buf + copied_size,  sizeof(extent_protocol::extentid_t));
 
-  // im->alloc_inode_appointed(type, id);
-  // im->alloc_inode(type);
-  create(type, id);
+  im->alloc_inode_appointed(type, id);
+  // create(type, id);
 
   free(params_buf);
 }
@@ -278,4 +316,32 @@ void extent_server::redo_remove(char* params_buf)
   free(params_buf);
 }
 
+void extent_server::commit_transaction(chfs_command::txid_t txid)
+{
+  chfs_command command;
+  command.type = chfs_command::CMD_COMMIT;
+  command.id = txid;
+
+  _persister->append_log(command);
+
+#if EXTENT_SERVER_DEBUG
+  std::cout << "EXTENT_SERVER commit_transaction: committed txid " << txid << std::endl;
+#endif
+
+}
+
+chfs_command::txid_t extent_server::begin_transaction()
+{
+  // increase next txid
+  chfs_command::txid_t txid = next_txid;
+  next_txid += 1;
+
+  chfs_command command;
+  command.type = chfs_command::CMD_BEGIN;
+  command.id = txid;
+
+  _persister->append_log(command);
+
+  return txid;
+}
 

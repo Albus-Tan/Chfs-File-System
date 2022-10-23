@@ -165,6 +165,8 @@ chfs_client::setattr(inum ino, size_t size)
 {
     int r = OK;
 
+    chfs_command::txid_t txid = ec->begin_transaction();
+
     /*
      * your code goes here.
      * note: get the content of inode ino, and modify its content
@@ -172,10 +174,12 @@ chfs_client::setattr(inum ino, size_t size)
      */
     std::string buf;
     // get the content of inode ino
-    ec->get(ino, buf);
+    ec->get(ino, buf, txid);
     // modify its content according to the size (<, =, or >) content length.
     buf.resize(size);
-    ec->put(ino, buf);
+    ec->put(ino, buf, txid);
+
+    ec->commit_transaction(txid);
 
     return r;
 }
@@ -191,6 +195,7 @@ chfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
      * note: lookup is what you need to check if file exist;
      * after create file or dir, you must remember to modify the parent infomation.
      */
+
     bool found = false;
     inum inum_fd;
     lookup(parent, name, found, inum_fd);
@@ -199,20 +204,27 @@ chfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
       // file exist
       return EXIST;
     } else {
+      chfs_command::txid_t txid = ec->begin_transaction();
+
       // create file
-      ec->create(extent_protocol::T_FILE, ino_out);
+      ec->create(extent_protocol::T_FILE, ino_out, txid);
 
       // modify the parent infomation to add entry
       // format for directory: name/inum/name/inum/name/inum/
       // as / can not be part of file name
       // read directory
-      ec->get(parent, buf);
+      ec->get(parent, buf, txid);
+
       if(CHFS_CLIENT_LOG) printf("chfs_client::create: create file, get parent dir content:\n %s\n" , buf.c_str());
+
       buf += (std::string(name) + "/" + filename(ino_out) + "/");
-      ec->put(parent, buf);
+      ec->put(parent, buf, txid);
+
+      if(CHFS_CLIENT_LOG) printf("chfs_client::create: create file, put parent dir content:\n %s\n" , buf.c_str());
+
+      ec->commit_transaction(txid);
     }
 
-    if(CHFS_CLIENT_LOG) printf("chfs_client::create: create file, put parent dir content:\n %s\n" , buf.c_str());
 
     return r;
 }
@@ -229,25 +241,32 @@ chfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
      * after create file or dir, you must remember to modify the parent infomation.
      */
 
+    chfs_command::txid_t txid = ec->begin_transaction();
+
     bool found = false;
     inum inum_fd;
     lookup(parent, name, found, inum_fd);
     if(found) {
       // dir exist
+
+      ec->commit_transaction(txid);
+
       return EXIST;
     } else {
       // create dir
-      ec->create(extent_protocol::T_DIR, ino_out);
+      ec->create(extent_protocol::T_DIR, ino_out, txid);
 
       // modify the parent infomation to add entry
       // format for directory: name/inum/name/inum/name/inum/
       // as / can not be part of file name
       std::string buf = "";
       // read directory
-      ec->get(parent, buf);
+      ec->get(parent, buf, txid);
       buf += (std::string(name) + "/" + filename(ino_out) + "/");
-      ec->put(parent, buf);
+      ec->put(parent, buf, txid);
     }
+
+    ec->commit_transaction(txid);
 
     return r;
 }
@@ -256,7 +275,6 @@ int
 chfs_client::symlink(inum parent, const char *name, const char *link, inum &ino_out)
 {
   int r = OK;
-
   bool found = false;
   inum inum_fd;
   lookup(parent, name, found, inum_fd);
@@ -264,20 +282,25 @@ chfs_client::symlink(inum parent, const char *name, const char *link, inum &ino_
     // symlink exist
     return EXIST;
   } else {
+
+    chfs_command::txid_t txid = ec->begin_transaction();
+
     // create symlink ( store it just under path of name )
     // pick an inum to store
-    ec->create(extent_protocol::T_SYMLINK, ino_out);
+    ec->create(extent_protocol::T_SYMLINK, ino_out, txid);
     // add symlink content ( link str )
-    ec->put(ino_out, std::string(link));
+    ec->put(ino_out, std::string(link), txid);
 
     // modify the parent infomation to add entry
     // format for directory: name/inum/name/inum/name/inum/
     // as / can not be part of file name
     std::string buf = "";
     // read directory
-    ec->get(parent, buf);
+    ec->get(parent, buf, txid);
     buf += (std::string(name) + "/" + filename(ino_out) + "/");
-    ec->put(parent, buf);
+    ec->put(parent, buf, txid);
+
+    ec->commit_transaction(txid);
   }
 
   return r;
@@ -406,13 +429,15 @@ chfs_client::write(inum ino, size_t size, off_t off, const char *data,
 {
     int r = OK;
 
+    chfs_command::txid_t txid = ec->begin_transaction();
+
     /*
      * your code goes here.
      * note: write using ec->put().
      * when off > length of original file, fill the holes with '\0'.
      */
     std::string buf;
-    ec->get(ino, buf);
+    ec->get(ino, buf, txid);
     size_t buf_size = buf.size();
 
     // when off > length of original file, fill the holes with '\0'.
@@ -428,7 +453,10 @@ chfs_client::write(inum ino, size_t size, off_t off, const char *data,
         buf[i] = data[i - off];
       }
       bytes_written = size;
-      ec->put(ino, buf);
+      ec->put(ino, buf, txid);
+
+      ec->commit_transaction(txid);
+
       return r;
     }
     // off + size > buf_size, off <= buf_size
@@ -440,7 +468,8 @@ chfs_client::write(inum ino, size_t size, off_t off, const char *data,
         buf[i] = data[i - off];
       }
       bytes_written = size;
-      ec->put(ino, buf);
+      ec->put(ino, buf, txid);
+      ec->commit_transaction(txid);
       return r;
     }
     // off + size <= buf_size
@@ -449,8 +478,8 @@ chfs_client::write(inum ino, size_t size, off_t off, const char *data,
       buf[i] = data[i - off];
     }
     bytes_written = size;
-    ec->put(ino, buf);
-
+    ec->put(ino, buf, txid);
+    ec->commit_transaction(txid);
     return r;
 }
 
@@ -469,19 +498,23 @@ int chfs_client::unlink(inum parent,const char *name)
     lookup(parent, name, found, inum_fd);
     if(found){
 
+      chfs_command::txid_t txid = ec->begin_transaction();
+
       // remove the file using ec->remove
-      ec->remove(inum_fd);
+      ec->remove(inum_fd, txid);
 
       // update parent directory content
       std::string buf;
-      ec->get(parent, buf);
+      ec->get(parent, buf, txid);
       size_t entry_start = buf.find(name);
       size_t name_end = buf.find('/', entry_start);
       // !!! find from name_end + 1
       size_t entry_end = buf.find('/', name_end + 1);
       // also delete the / at end
       buf.erase(entry_start, entry_end - entry_start + 1);
-      ec->put(parent, buf);
+      ec->put(parent, buf, txid);
+
+      ec->commit_transaction(txid);
     } else {
       // not found
       printf("chfs_client::unlink: file %s not found\n", name);

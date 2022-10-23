@@ -38,14 +38,13 @@ public:
         CMD_REMOVE,
     };
 
-
-    // static txid_t next_txid;
-
+    // command type
     cmd_type type = CMD_BEGIN;
-    txid_t id = 0;
 
-    // Pointer to previous record in this transaction
-    chfs_command* prev = nullptr;
+    // transaction id
+    // start from 1
+    // 0 represent belong to no transaction
+    txid_t id = 0;
 
     // size of all params
     uint64_t params_size = 0;
@@ -57,7 +56,7 @@ public:
     chfs_command() {}
 
     uint64_t size() const {
-      uint64_t s = sizeof(cmd_type) + sizeof(txid_t) + sizeof(chfs_command*) + sizeof(uint64_t) + params_size;
+      uint64_t s = sizeof(cmd_type) + sizeof(txid_t) + sizeof(uint64_t) + params_size;
         return s;
     }
 
@@ -71,8 +70,6 @@ public:
       copied_size += sizeof(cmd_type);
       memcpy(buf + copied_size, reinterpret_cast<char *>(&id), sizeof(txid_t));
       copied_size += sizeof(txid_t);
-      memcpy(buf + copied_size, reinterpret_cast<char *>(&prev), sizeof(chfs_command *));
-      copied_size += sizeof(chfs_command *);
       memcpy(buf + copied_size, reinterpret_cast<char *>(&params_size), sizeof(uint64_t));
       copied_size += sizeof(uint64_t);
       memcpy(buf + copied_size, params_buf, params_size);
@@ -81,7 +78,6 @@ public:
     void restore_log(std::ifstream &istrm){
       istrm.read(reinterpret_cast<char *>(&type), sizeof(cmd_type));
       istrm.read(reinterpret_cast<char *>(&id), sizeof(txid_t));
-      istrm.read(reinterpret_cast<char *>(&prev), sizeof(chfs_command *));
       istrm.read(reinterpret_cast<char *>(&params_size), sizeof(uint64_t));
       params_buf = (char *)malloc(params_size);
       istrm.read(params_buf, params_size);
@@ -93,7 +89,6 @@ public:
     void print_cmd_info(){
       std::cout << "TYPE " << type << ", "
                 << "TXID " << id << ", "
-                << "PREV_ADDR " << prev << ", "
                 << "PARA_SIZE " << params_size;
       if(type == CMD_PUT){
 
@@ -187,6 +182,8 @@ void persister<command>::append_log(command& log) {
     ostrm.write(buf, log.size());
 
     ostrm.write("\n",1);
+
+    ostrm.flush();
 
     ostrm.close();
 
