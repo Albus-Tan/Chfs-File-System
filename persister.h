@@ -237,7 +237,7 @@ void persister<command>::restore_logdata() {
     // check if file exists
     if(!istrm.is_open()){
 #if PRINT_DEBUG_INFO
-      std::cout << "restore_logdata: file_path_logfile doesn't exist" << std::endl;
+      std::cout << __PRETTY_FUNCTION__ << "restore_logdata: file_path_logfile doesn't exist" << std::endl;
 #endif
       return;
     }
@@ -266,7 +266,7 @@ void persister<command>::restore_checkpoint() {
   // check if file exists
   if(!istrm.is_open()){
 #if PRINT_DEBUG_INFO
-    std::cout << "restore_checkpoint: file_path_checkpoint doesn't exist" << std::endl;
+    std::cout << __PRETTY_FUNCTION__ << " restore_checkpoint: file_path_checkpoint doesn't exist" << std::endl;
 #endif
     return;
   }
