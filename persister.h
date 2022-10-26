@@ -8,7 +8,7 @@
 #include "rpc.h"
 #include "utils.h"
 
-#define MAX_LOG_SZ 1024
+#define MAX_LOG_SZ 131072
 
 #define PRINT_DEBUG_INFO 0
 
