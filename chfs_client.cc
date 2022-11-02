@@ -21,8 +21,11 @@ chfs_client::chfs_client(std::string extent_dst, std::string lock_dst)
 {
     ec = new extent_client(extent_dst);
     lc = new lock_client(lock_dst);
+
+    lc->acquire(1);
     if (ec->put(1, "") != extent_protocol::OK)
         printf("error init root dir\n"); // XYB: init root dir
+    lc->release(1);
 }
 
 chfs_client::inum
@@ -47,10 +50,14 @@ chfs_client::isfile(inum inum)
 {
     extent_protocol::attr a;
 
+    lc->acquire(inum);
+
     if (ec->getattr(inum, a) != extent_protocol::OK) {
         printf("error getting attr\n");
+        lc->release(inum);
         return false;
     }
+    lc->release(inum);
 
     if (a.type == extent_protocol::T_FILE) {
         printf("isfile: %lld is a file\n", inum);
@@ -70,12 +77,15 @@ chfs_client::isdir(inum inum)
 {
     // Oops! is this still correct when you implement symlink?
     // return ! isfile(inum);
-  extent_protocol::attr a;
+    extent_protocol::attr a;
 
+    lc->acquire(inum);
     if (ec->getattr(inum, a) != extent_protocol::OK) {
       printf("error getting attr\n");
+      lc->release(inum);
       return false;
     }
+    lc->release(inum);
 
     if (a.type == extent_protocol::T_DIR) {
       printf("isdir: %lld is a dir\n", inum);
@@ -90,10 +100,13 @@ chfs_client::issymlink(inum inum)
 {
   extent_protocol::attr a;
 
+  lc->acquire(inum);
   if (ec->getattr(inum, a) != extent_protocol::OK) {
     printf("error getting attr\n");
+    lc->release(inum);
     return false;
   }
+  lc->release(inum);
 
   if (a.type == extent_protocol::T_SYMLINK) {
     printf("issymlink: %lld is a symlink\n", inum);
@@ -110,6 +123,8 @@ chfs_client::getfile(inum inum, fileinfo &fin)
 
     printf("getfile %016llx\n", inum);
     extent_protocol::attr a;
+
+    lc->acquire(inum);
     if (ec->getattr(inum, a) != extent_protocol::OK) {
         r = IOERR;
         goto release;
@@ -122,6 +137,7 @@ chfs_client::getfile(inum inum, fileinfo &fin)
     printf("getfile %016llx -> sz %llu\n", inum, fin.size);
 
 release:
+    lc->release(inum);
     return r;
 }
 
@@ -132,6 +148,8 @@ chfs_client::getdir(inum inum, dirinfo &din)
 
     printf("getdir %016llx\n", inum);
     extent_protocol::attr a;
+
+    lc->acquire(inum);
     if (ec->getattr(inum, a) != extent_protocol::OK) {
         r = IOERR;
         goto release;
@@ -141,6 +159,7 @@ chfs_client::getdir(inum inum, dirinfo &din)
     din.ctime = a.ctime;
 
 release:
+    lc->release(inum);
     return r;
 }
 
@@ -168,11 +187,13 @@ chfs_client::setattr(inum ino, size_t size)
      * according to the size (<, =, or >) content length.
      */
     std::string buf;
+    lc->acquire(ino);
     // get the content of inode ino
     ec->get(ino, buf, txid);
     // modify its content according to the size (<, =, or >) content length.
     buf.resize(size);
     ec->put(ino, buf, txid);
+    lc->release(ino);
 
     ec->commit_transaction(txid);
 
@@ -191,12 +212,15 @@ chfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
      * after create file or dir, you must remember to modify the parent infomation.
      */
 
+    lc->acquire(parent);
+
     bool found = false;
     inum inum_fd;
     lookup(parent, name, found, inum_fd);
     std::string buf = "";
     if(found) {
       // file exist
+      lc->release(parent);
       return EXIST;
     } else {
       chfs_command::txid_t txid = ec->begin_transaction();
@@ -216,6 +240,8 @@ chfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
       ec->put(parent, buf, txid);
 
       if(CHFS_CLIENT_LOG) printf("chfs_client::create: create file, put parent dir content:\n %s\n" , buf.c_str());
+
+      lc->release(parent);
 
       ec->commit_transaction(txid);
     }
@@ -240,10 +266,14 @@ chfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
 
     bool found = false;
     inum inum_fd;
+
+    lc->acquire(parent);
+
     lookup(parent, name, found, inum_fd);
     if(found) {
       // dir exist
 
+      lc->release(parent);
       ec->commit_transaction(txid);
 
       return EXIST;
@@ -259,6 +289,8 @@ chfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
       ec->get(parent, buf, txid);
       buf += (std::string(name) + "/" + filename(ino_out) + "/");
       ec->put(parent, buf, txid);
+
+      lc->release(parent);
     }
 
     ec->commit_transaction(txid);
@@ -312,6 +344,8 @@ chfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
      * you should design the format of directory content.
      */
 
+    // do not need to acquire lock since function calling lookup already get that lock
+
     if(CHFS_CLIENT_LOG) printf("chfs_client::lookup: step in\n");
 
     // read parent dir
@@ -351,6 +385,8 @@ chfs_client::readdir(inum dir, std::list<dirent> &list)
      * note: you should parse the dirctory content using your defined format,
      * and push the dirents to the list.
      */
+
+    // do not need to acquire lock since function calling readdir already get that lock
 
     // format for directory: name/inum/name/inum/name/inum/
     // as / can not be part of file name
@@ -392,6 +428,9 @@ chfs_client::read(inum ino, size_t size, off_t off, std::string &data)
      * your code goes here.
      * note: read using ec->get().
      */
+
+    lc->acquire(ino);
+
     std::string buf;
     ec->get(ino, buf);
     size_t buf_size = buf.size();
@@ -400,6 +439,7 @@ chfs_client::read(inum ino, size_t size, off_t off, std::string &data)
     if(off > buf_size){
       printf("chfs_client: FAILED, read offset larger than file size\n");
       data = "";
+      lc->release(ino);
       return r;
     }
     // offset + size 超出长度范围
@@ -407,13 +447,14 @@ chfs_client::read(inum ino, size_t size, off_t off, std::string &data)
       printf("chfs_client: read size + offset larger than file size\n");
       data = buf.substr(off);
       printf("chfs_client: data %s\n", data);
+      lc->release(ino);
       return r;
     }
     // offset + size 在长度范围之内
     data = buf.substr(off, size);
 
     // data = std::string(buf.begin() + off, buf.begin() + size + off);
-
+    lc->release(ino);
     return r;
 }
 
@@ -424,8 +465,9 @@ chfs_client::write(inum ino, size_t size, off_t off, const char *data,
 {
     int r = OK;
 
-    chfs_command::txid_t txid = ec->begin_transaction();
+    lc->acquire(ino);
 
+    chfs_command::txid_t txid = ec->begin_transaction();
     /*
      * your code goes here.
      * note: write using ec->put().
@@ -452,6 +494,7 @@ chfs_client::write(inum ino, size_t size, off_t off, const char *data,
 
       ec->commit_transaction(txid);
 
+      lc->release(ino);
       return r;
     }
     // off + size > buf_size, off <= buf_size
@@ -465,6 +508,7 @@ chfs_client::write(inum ino, size_t size, off_t off, const char *data,
       bytes_written = size;
       ec->put(ino, buf, txid);
       ec->commit_transaction(txid);
+      lc->release(ino);
       return r;
     }
     // off + size <= buf_size
@@ -475,6 +519,7 @@ chfs_client::write(inum ino, size_t size, off_t off, const char *data,
     bytes_written = size;
     ec->put(ino, buf, txid);
     ec->commit_transaction(txid);
+    lc->release(ino);
     return r;
 }
 
@@ -490,6 +535,9 @@ int chfs_client::unlink(inum parent,const char *name)
      */
     bool found = false;
     inum inum_fd;
+
+    lc->acquire(parent);
+
     lookup(parent, name, found, inum_fd);
     if(found){
 
@@ -515,13 +563,16 @@ int chfs_client::unlink(inum parent,const char *name)
       printf("chfs_client::unlink: file %s not found\n", name);
     }
 
+    lc->release(parent);
     return r;
 }
 
 int chfs_client::readlink(inum inode,std::string &buf)
 {
   // read from inode, fill link into buf
+  lc->acquire(inode);
   ec->get(inode, buf);
+  lc->release(inode);
   return OK;
 }
 
