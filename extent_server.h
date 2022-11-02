@@ -13,6 +13,8 @@
 
 #define EXTENT_SERVER_DEBUG 0
 
+#define DO_LOG 0
+
 class extent_server {
  protected:
 #if 0
@@ -35,11 +37,11 @@ class extent_server {
  public:
   extent_server();
 
-  int create(uint32_t type, extent_protocol::extentid_t &id, chfs_command::txid_t txid = 0);
-  int put(extent_protocol::extentid_t id, std::string, int &, chfs_command::txid_t txid = 0);
-  int get(extent_protocol::extentid_t id, std::string &, chfs_command::txid_t txid = 0);
-  int getattr(extent_protocol::extentid_t id, extent_protocol::attr &, chfs_command::txid_t txid = 0);
-  int remove(extent_protocol::extentid_t id, int &, chfs_command::txid_t txid = 0);
+  int create(extent_protocol::extent_txid_t txid, uint32_t type, extent_protocol::extentid_t &id);
+  int put(extent_protocol::extent_txid_t txid, extent_protocol::extentid_t id, std::string, int &);
+  int get(extent_protocol::extent_txid_t txid, extent_protocol::extentid_t id, std::string &);
+  int getattr(extent_protocol::extent_txid_t txid, extent_protocol::extentid_t id, extent_protocol::attr &);
+  int remove(extent_protocol::extent_txid_t txid, extent_protocol::extentid_t id, int &);
 
   // Your code here for lab2A: add logging APIs
 

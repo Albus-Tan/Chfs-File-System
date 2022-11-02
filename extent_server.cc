@@ -16,11 +16,13 @@ extent_server::extent_server()
   im = new inode_manager();
   _persister = new chfs_persister("log"); // DO NOT change the dir name here
 
-  // Your code here for Lab2A: recover data on startup
-  _persister->clear_restored_log_entries();
-  _persister->restore_checkpoint();
-  _persister->restore_logdata();
-  redo_log_commands();
+  if(DO_LOG){
+    // Your code here for Lab2A: recover data on startup
+    _persister->clear_restored_log_entries();
+    _persister->restore_checkpoint();
+    _persister->restore_logdata();
+    redo_log_commands();
+  }
 }
 
 void extent_server::redo_log_commands()
@@ -92,21 +94,21 @@ void extent_server::redo_log_commands()
   on_redoing_logs = false;
 }
 
-int extent_server::create(uint32_t type, extent_protocol::extentid_t &id, chfs_command::txid_t txid)
+int extent_server::create(extent_protocol::extent_txid_t txid, uint32_t type, extent_protocol::extentid_t &id)
 {
 
   // alloc a new inode and return inum
   printf("extent_server: create inode\n");
   id = im->alloc_inode(type);
 
-  if(!on_redoing_logs) log_create(type, id, txid);
+  if(DO_LOG && !on_redoing_logs) log_create(type, id, txid);
 
   return extent_protocol::OK;
 }
 
-int extent_server::put(extent_protocol::extentid_t id, std::string buf, int &, chfs_command::txid_t txid)
+int extent_server::put(extent_protocol::extent_txid_t txid, extent_protocol::extentid_t id, std::string buf, int &)
 {
-  if(!on_redoing_logs) log_put(id, buf, txid);
+  if(DO_LOG && !on_redoing_logs) log_put(id, buf, txid);
 
   id &= 0x7fffffff;
   
@@ -117,9 +119,9 @@ int extent_server::put(extent_protocol::extentid_t id, std::string buf, int &, c
   return extent_protocol::OK;
 }
 
-int extent_server::get(extent_protocol::extentid_t id, std::string &buf, chfs_command::txid_t txid)
+int extent_server::get(extent_protocol::extent_txid_t txid, extent_protocol::extentid_t id, std::string &buf)
 {
-  if(!on_redoing_logs) log_get(id, txid);
+  if(DO_LOG && !on_redoing_logs) log_get(id, txid);
   printf("extent_server: get %lld\n", id);
 
   id &= 0x7fffffff;
@@ -138,9 +140,9 @@ int extent_server::get(extent_protocol::extentid_t id, std::string &buf, chfs_co
   return extent_protocol::OK;
 }
 
-int extent_server::getattr(extent_protocol::extentid_t id, extent_protocol::attr &a, chfs_command::txid_t txid)
+int extent_server::getattr(extent_protocol::extent_txid_t txid, extent_protocol::extentid_t id, extent_protocol::attr &a)
 {
-  if(!on_redoing_logs) log_getattr(id, txid);
+  if(DO_LOG && !on_redoing_logs) log_getattr(id, txid);
   printf("extent_server: getattr %lld\n", id);
 
   id &= 0x7fffffff;
@@ -153,9 +155,9 @@ int extent_server::getattr(extent_protocol::extentid_t id, extent_protocol::attr
   return extent_protocol::OK;
 }
 
-int extent_server::remove(extent_protocol::extentid_t id, int &, chfs_command::txid_t txid)
+int extent_server::remove(extent_protocol::extent_txid_t txid, extent_protocol::extentid_t id, int &)
 {
-  if(!on_redoing_logs) log_remove(id, txid);
+  if(DO_LOG && !on_redoing_logs) log_remove(id, txid);
   printf("extent_server: write %lld\n", id);
 
   id &= 0x7fffffff;
@@ -289,7 +291,7 @@ void extent_server::redo_put(char* params_buf, uint64_t params_size)
   // need to check the size
   // std::string buf(buf_ptr);
   // free(buf_ptr);
-  put(id, buf, i);
+  put(0, id, buf, i);
 
   free(params_buf);
 }
@@ -313,7 +315,7 @@ void extent_server::redo_remove(char* params_buf)
 
   memcpy(reinterpret_cast<char *>(&id), params_buf, sizeof(extent_protocol::extentid_t));
 
-  remove(id, i);
+  remove(0, id, i);
 
   free(params_buf);
 }
