@@ -35,15 +35,21 @@ block_manager::alloc_block()
   // start to allocate from data part
   // |<-sb->|<-free block bitmap->|<-inode table->|<-data->|
   // |  1 1 |   (nblocks)/BPB + 1 |(INODE_NUM)/IPB|
+
+  pthread_mutex_lock(&using_blocks_lock);
+
   uint32_t i = IBLOCK(INODE_NUM, sb.nblocks);
   for(; i < BLOCK_NUM; ++i){
     if(using_blocks[i] == 0) {
       // mark the corresponding bit in block bitmap
       using_blocks[i] = 1;
+
+      pthread_mutex_unlock(&using_blocks_lock);
       return i;
     }
   }
   printf("\tim: ERROR alloc_block failed!\n");
+  pthread_mutex_unlock(&using_blocks_lock);
   return 0; // alloc fail
 }
 
@@ -55,7 +61,9 @@ block_manager::free_block(uint32_t id)
    * note: you should unmark the corresponding bit in the block bitmap when free.
    */
   // unmark the corresponding bit in the block bitmap
+  pthread_mutex_lock(&using_blocks_lock);
   using_blocks[id] = 0;
+  pthread_mutex_unlock(&using_blocks_lock);
   return;
 }
 
@@ -65,6 +73,8 @@ block_manager::block_manager()
 {
   d = new disk();
 
+  // init lock
+  pthread_mutex_init(&using_blocks_lock, NULL);
   // mark free block bitmap for |<-sb->|<-free block bitmap->|<-inode table->|
   for(uint32_t i = 0; i < IBLOCK(INODE_NUM, sb.nblocks); ++i){
     using_blocks[i] = 1;
@@ -99,6 +109,7 @@ inode_manager::inode_manager()
     printf("\tim: error! alloc first inode %d, should be 1\n", root_dir);
     exit(0);
   }
+  pthread_mutex_init(&inode_table_lock, NULL);
 }
 
 /* Create a new file.
@@ -112,6 +123,8 @@ inode_manager::alloc_inode(uint32_t type)
    * the 1st is used for root_dir, see inode_manager::inode_manager().
    */
   if(PRINT_LOG) printf("\tim: alloc_inode %d\n", type);
+
+  pthread_mutex_lock(&inode_table_lock);  // prevent concurrent alloc getting same inum
 
   // check from where last alloc
   static uint32_t idx = 0;
@@ -128,10 +141,12 @@ inode_manager::alloc_inode(uint32_t type)
     inode->ctime = time(NULL);
     put_inode(idx, inode);
     free(inode);
+    pthread_mutex_unlock(&inode_table_lock);
     return idx;
   }
 
   printf("\tim: ERROR alloc_inode %d failed!\n", type);
+  pthread_mutex_unlock(&inode_table_lock);
   return -1;
 }
 
@@ -173,12 +188,16 @@ inode_manager::free_inode(uint32_t inum)
    */
 
   if(PRINT_LOG) printf("\tim: free_inode %d\n", inum);
+
+  pthread_mutex_lock(&inode_table_lock);
+
   inode_t *inode = get_inode(inum);
   if(inode != NULL){
     inode->type = 0;
     put_inode(inum,inode);  // write back to disk
     free(inode);  // free its space
   }
+  pthread_mutex_unlock(&inode_table_lock);
   return;
 }
 

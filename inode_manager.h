@@ -4,6 +4,7 @@
 #define inode_h
 
 #include <stdint.h>
+#include <pthread.h>
 #include "extent_protocol.h"
 
 #define PRINT_LOG 0
@@ -38,6 +39,7 @@ class block_manager {
  private:
   disk *d;
   std::map <uint32_t, int> using_blocks;
+  pthread_mutex_t using_blocks_lock;   // lock for using_blocks
  public:
   block_manager();
   struct superblock sb;
@@ -84,6 +86,8 @@ class inode_manager {
   struct inode* get_inode(uint32_t inum);
   void put_inode(uint32_t inum, struct inode *ino);
   uint32_t get_block_id(uint32_t i, inode_t *inode);
+
+  pthread_mutex_t inode_table_lock;   // lock for inode table
 
  public:
   inode_manager();
