@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <mutex>
 
+// persist the Raft log and metadata
 template <typename command>
 class raft_storage {
 public:
