@@ -303,6 +303,10 @@ void raft<state_machine, command>::start() {
   // append a null log as the first log
   log.push_back(log_entry<command>(0, 0, cmd));
 
+  // restore metadata and log
+  storage->restore_metadata(current_term, voted_for);
+  storage->restore_log(log);
+
   // create 4 background threads
   this->background_election = new std::thread(&raft::run_background_election, this);
   this->background_ping = new std::thread(&raft::run_background_ping, this);
@@ -318,14 +322,17 @@ bool raft<state_machine, command>::new_command(command cmd, int &term, int &inde
   // And the log should be replicated to the follower asynchronously in another background thread
 
   std::unique_lock<std::mutex> lock(mtx);
-  if (is_leader(current_term)) {
+  if (is_leader(term)) {
 
     RAFT_LOG("new command");
 
-    term = current_term;
     index = log.size();
 
     log_entry<command> new_log(term, index, cmd);
+
+    // persist log
+    storage->persist_log(new_log);
+
     log.push_back(new_log);
 
     next_index[my_id] = index + 1;
@@ -371,11 +378,16 @@ int raft<state_machine, command>::request_vote(request_vote_args args, request_v
   } else {
     // args.term_ >= current_term
     if (args.term_ > current_term) {
+
       // If term > currentTerm, currentTerm ← term
       current_term = args.term_;
       // step down if leader or candidate
       role = follower;
       voted_for = -1;
+
+      // persist metadata
+      storage->persist_metadata(current_term, voted_for);
+
       RAFT_LOG("args.term_ > current_term, reverts to FOLLOWER");
     }
 
@@ -402,7 +414,8 @@ int raft<state_machine, command>::request_vote(request_vote_args args, request_v
 
         // reset election timeout
 
-        // persist data
+        // persist metadata
+        storage->persist_metadata(current_term, voted_for);
       }
     } else {
       RAFT_LOG("term == currentTerm, reply vote_granted_ FALSE");
@@ -431,6 +444,10 @@ void raft<state_machine, command>::handle_request_vote_reply(int target,
     current_term = reply.term_;
     role = follower;
     voted_for = -1;
+
+    // persist metadata
+    storage->persist_metadata(current_term, voted_for);
+
     RAFT_LOG("reply.term_ > current_term, reverts to FOLLOWER");
   } else {
     // if reply.vote_granted_ == true and still in candidate role
@@ -493,6 +510,9 @@ int raft<state_machine, command>::append_entries(append_entries_args<command> ar
 
       reply.term_ = current_term;
       reply.success_ = true;
+
+      // persist metadata
+      storage->persist_metadata(current_term, voted_for);
     }
   } else {
     // append_entries
@@ -501,6 +521,9 @@ int raft<state_machine, command>::append_entries(append_entries_args<command> ar
       current_term = arg.term_;
       role = follower;
       voted_for = -1;
+
+      // persist metadata
+      storage->persist_metadata(current_term, voted_for);
     }
 
     if (arg.term_ < current_term) {
@@ -532,7 +555,8 @@ int raft<state_machine, command>::append_entries(append_entries_args<command> ar
       RAFT_LOG("append_entries::log size after erase: %d", log.size());
       RAFT_LOG("append_entries::arg.entries_ size: %d", arg.entries_.size());
 
-      // TODO: persist log to disk
+      // persist logs
+      storage->persist_logs(arg.entries_);
 
       // Append any new entries not already in the log
       log.insert(log.end(), arg.entries_.begin(), arg.entries_.end());
@@ -570,6 +594,10 @@ void raft<state_machine, command>::handle_append_entries_reply(int node,
     current_term = reply.term_;
     role = follower;
     voted_for = -1;
+
+    // persist metadata
+    storage->persist_metadata(current_term, voted_for);
+
     RAFT_LOG("reply.term_ > current_term, reverts to FOLLOWER");
   } else {
     if (arg.heartbeat_) {}
@@ -715,6 +743,9 @@ void raft<state_machine, command>::run_background_election() {
           // It then votes for itself
           voted_for = my_id;
 
+          // persist metadata
+          storage->persist_metadata(current_term, voted_for);
+
           votes_get.assign(num_nodes(), false);
           votes_get[my_id] = true;
 
@@ -745,6 +776,9 @@ void raft<state_machine, command>::run_background_election() {
 
             // It then votes for itself
             voted_for = my_id;
+
+            // persist metadata
+            storage->persist_metadata(current_term, voted_for);
 
             votes_get.assign(num_nodes(), false);
             votes_get[my_id] = true;
