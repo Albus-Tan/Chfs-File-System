@@ -133,7 +133,8 @@ class append_entries_args {
 
   append_entries_args() {}
 
-  append_entries_args(int term, bool heartbeat) : term_(term), heartbeat_(heartbeat) {}
+  append_entries_args(int term, bool heartbeat, int leader_commit)
+      : term_(term), heartbeat_(heartbeat), leader_commit_(leader_commit) {}
 
   append_entries_args(int term,
                       int leader_id,
