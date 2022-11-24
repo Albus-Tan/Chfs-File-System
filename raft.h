@@ -40,6 +40,18 @@ class raft {
 //         printf("[%ld][%s:%d:%s][node %d term %d] " fmt "\n", now, __FILE__, __LINE__, __FUNCTION__ ,my_id, current_term, ##args); \
 //     } while (0);
 
+#define PRINT_ALL_LOG(args...) \
+    do {                       \
+    } while (0);
+
+//#define PRINT_ALL_LOG(logs) \
+//    do {  \
+//        RAFT_LOG("print log entries")  \
+//        for(auto log : logs) {  \
+//          RAFT_LOG("index %d, term %d", log.index_, log.term_); \
+//        } \
+//    } while (0);
+
  public:
   raft(
       rpcs *rpc_server,
@@ -396,8 +408,8 @@ int raft<state_machine, command>::request_vote(request_vote_args args, request_v
     // and candidate's log is at least as complete as local log,
     if (voted_for == -1 || voted_for == args.candidate_id_) {
       // voting server denies vote if its log is more complete
-      if ((args.last_log_term_ < log[commit_index].term_)
-          || ((args.last_log_term_ == log[commit_index].term_) && (args.last_log_index_ < commit_index))) {
+      if ((args.last_log_term_ < log[log.size() - 1].term_)
+          || ((args.last_log_term_ == log[log.size() - 1].term_) && (args.last_log_index_ < log.size() - 1))) {
         RAFT_LOG("term == currentTerm, reply vote_granted_ FALSE");
         // do not grant vote
         reply.term_ = current_term;
@@ -470,6 +482,13 @@ void raft<state_machine, command>::handle_request_vote_reply(int target,
         RAFT_LOG("become LEADER");
         // change role to leader
         role = leader;
+
+//        // append empty log of current term
+//        command cmd;
+//        log_entry<command> empty_log(current_term, log.size(), cmd);
+//        // persist log
+//        storage->persist_log(empty_log);
+//        log.push_back(empty_log);
       }
 
     }
@@ -548,12 +567,15 @@ int raft<state_machine, command>::append_entries(append_entries_args<command> ar
       auto end = log.end();
 
       RAFT_LOG("append_entries::log size before erase: %d", log.size());
+      PRINT_ALL_LOG(log);
 
       // delete [arg.prev_log_index_+1, end]
       log.erase(start, end);
 
       RAFT_LOG("append_entries::log size after erase: %d", log.size());
+      PRINT_ALL_LOG(log);
       RAFT_LOG("append_entries::arg.entries_ size: %d", arg.entries_.size());
+      PRINT_ALL_LOG(arg.entries_);
 
       // persist logs
       storage->persist_logs(arg.entries_);
@@ -562,6 +584,7 @@ int raft<state_machine, command>::append_entries(append_entries_args<command> ar
       log.insert(log.end(), arg.entries_.begin(), arg.entries_.end());
 
       RAFT_LOG("append_entries::log size after insert: %d", log.size());
+      PRINT_ALL_LOG(log);
 
       // If leaderCommit > commitIndex, set commitIndex =
       // min(leaderCommit, index of last new entry)

@@ -9,6 +9,20 @@
 // persist the Raft log and metadata
 template<typename command>
 class raft_storage {
+
+#define STORAGE_LOG(fmt, args...) \
+    do {                       \
+    } while (0);
+
+//#define STORAGE_LOG(fmt, args...)                                                                                   \
+//     do {                                                                                                         \
+//         auto now =                                                                                               \
+//             std::chrono::duration_cast<std::chrono::milliseconds>(                                               \
+//                 std::chrono::system_clock::now().time_since_epoch())                                             \
+//                 .count();                                                                                        \
+//         printf("[%ld][%s:%d:%s][STORAGE_LOG] " fmt "\n", now, __FILE__, __LINE__, __FUNCTION__ , ##args); \
+//     } while (0);
+
  public:
   raft_storage(const std::string &file_dir);
   ~raft_storage();
@@ -48,6 +62,7 @@ void raft_storage<command>::persist_log(const log_entry<command> &log) {
   std::ofstream ofs;
   ofs.open(log_file_path, std::ios::out | std::ios::app | std::ios::binary);
   if (ofs.is_open()) {
+
     ofs.write(reinterpret_cast<char *>(const_cast<int *>(&(log.term_))), sizeof(int));
     ofs.write(reinterpret_cast<char *>(const_cast<int *>(&(log.index_))), sizeof(int));
 
@@ -62,6 +77,7 @@ void raft_storage<command>::persist_log(const log_entry<command> &log) {
 
     ofs.close();
   }
+  STORAGE_LOG("log persist success, term %d, index %d", log.term_, log.index_);
 }
 
 
@@ -85,8 +101,9 @@ void raft_storage<command>::persist_logs(const std::vector<log_entry<command> > 
 
       delete[] buf;
 
-      ofs.close();
+      STORAGE_LOG("log persist success, term %d, index %d", log.term_, log.index_);
     }
+    ofs.close();
   }
 }
 
@@ -117,6 +134,8 @@ void raft_storage<command>::restore_log(std::vector<log_entry<command>> &log) {
       // pushback until index
       while (index >= log.size()) log.push_back(log_entry<command>());
       log[index] = log_entry<command>(term, index, cmd);
+
+      STORAGE_LOG("log restore success, term %d, index %d", term, index);
 
     }
 
