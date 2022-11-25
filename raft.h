@@ -121,13 +121,16 @@ class raft {
   // Your code here:
 
   // time related const in milliseconds
-  const int heartbeat_time_interval = 120;
-  const int commit_time_interval = 10;
+  const int heartbeat_time_interval = 50;
+  const int commit_time_interval = 20;
   const int apply_time_interval = 10;
   const int sleep_time = 10;
   const int follower_election_timeout_lower = 300;  // 300
   const int follower_election_timeout_upper = 500;  // 500
-  std::chrono::milliseconds candidate_election_timeout;  // 1000
+  const int candidate_election_timeout_lower = 900; // 900
+  const int candidate_election_timeout_upper = 1100; // 1100
+  std::chrono::milliseconds follower_election_timeout;  // init 400
+  std::chrono::milliseconds candidate_election_timeout;  // init 1000
 
   // time related
   std::chrono::system_clock::time_point last_election_start_time;
@@ -248,7 +251,14 @@ raft<state_machine, command>::raft(rpcs *server,
   last_election_start_time = std::chrono::system_clock::now();
   last_received_RPC_time = std::chrono::system_clock::now();
 
-  candidate_election_timeout = std::chrono::milliseconds(1000);
+
+  srand(time(NULL));
+  candidate_election_timeout =
+      std::chrono::milliseconds(rand() % (candidate_election_timeout_upper - candidate_election_timeout_lower)
+                                    + candidate_election_timeout_lower);
+  follower_election_timeout =
+      std::chrono::milliseconds(rand() % (follower_election_timeout_upper - follower_election_timeout_lower)
+                                    + follower_election_timeout_lower);
 
 #ifdef LOG_TO_FILE
   freopen("raft.log", "w", stdout);
@@ -378,7 +388,9 @@ int raft<state_machine, command>::request_vote(request_vote_args args, request_v
   // Lab3: Your code here
   std::unique_lock<std::mutex> lock(mtx);
 
-  last_received_RPC_time = std::chrono::system_clock::now();
+  // should not update here
+  // since rpc sender is not leader yet
+  // last_received_RPC_time = std::chrono::system_clock::now();
 
   RAFT_LOG("request_vote start");
 
@@ -752,8 +764,10 @@ void raft<state_machine, command>::run_background_election() {
         // Work for followers and candidates.
         // A server begins an election if it receives no communication over a period of time
         std::chrono::system_clock::time_point current_time = std::chrono::system_clock::now();
-
         if (role == candidate && current_time - last_election_start_time > candidate_election_timeout) {
+          candidate_election_timeout = std::chrono::milliseconds(
+              rand() % (candidate_election_timeout_upper - candidate_election_timeout_lower)
+                  + candidate_election_timeout_lower);
           // For candidate: A period of time goes by with no winner
           // start election
           RAFT_LOG("role == candidate, restart election");
@@ -782,10 +796,10 @@ void raft<state_machine, command>::run_background_election() {
           RAFT_LOG("request_vote RPCs sent");
 
         } else if (role == follower) {
-          std::chrono::milliseconds follower_election_timeout =
-              std::chrono::milliseconds(rand() % (follower_election_timeout_upper - follower_election_timeout_lower)
-                                            + follower_election_timeout_lower);
           if (current_time - last_received_RPC_time > follower_election_timeout) {
+            follower_election_timeout =
+                std::chrono::milliseconds(rand() % (follower_election_timeout_upper - follower_election_timeout_lower)
+                                              + follower_election_timeout_lower);
             // start election
             RAFT_LOG("role == follower, start election");
             // update last_election_start_time
