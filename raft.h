@@ -121,16 +121,16 @@ class raft {
   // Your code here:
 
   // time related const in milliseconds
-  const int heartbeat_time_interval = 50;
-  const int commit_time_interval = 20;
+  const int heartbeat_time_interval = 100;
+  const int commit_time_interval = 100;
   const int apply_time_interval = 10;
   const int sleep_time = 10;
-  const int follower_election_timeout_lower = 300;  // 300
-  const int follower_election_timeout_upper = 500;  // 500
-  const int candidate_election_timeout_lower = 900; // 900
-  const int candidate_election_timeout_upper = 1100; // 1100
-  std::chrono::milliseconds follower_election_timeout;  // init 400
-  std::chrono::milliseconds candidate_election_timeout;  // init 1000
+  const int follower_election_timeout_lower = 700;
+  const int follower_election_timeout_upper = 1300;
+  const int candidate_election_timeout_lower = 1000;
+  const int candidate_election_timeout_upper = 1500;
+  std::chrono::milliseconds follower_election_timeout;
+  std::chrono::milliseconds candidate_election_timeout;
 
   // time related
   std::chrono::system_clock::time_point last_election_start_time;
@@ -251,8 +251,6 @@ raft<state_machine, command>::raft(rpcs *server,
   last_election_start_time = std::chrono::system_clock::now();
   last_received_RPC_time = std::chrono::system_clock::now();
 
-
-  srand(time(NULL));
   candidate_election_timeout =
       std::chrono::milliseconds(rand() % (candidate_election_timeout_upper - candidate_election_timeout_lower)
                                     + candidate_election_timeout_lower);
@@ -495,6 +493,18 @@ void raft<state_machine, command>::handle_request_vote_reply(int target,
         // change role to leader
         role = leader;
 
+        // immediately send heartbeat
+        if (is_leader(current_term)) {
+          for (int id = 0; id < num_nodes(); ++id) {
+            if (id == my_id) continue;
+            log_entry<command> prev_log = log[next_index[id] - 1];
+            append_entries_args<command> arg(current_term, my_id, prev_log.index_, prev_log.term_, commit_index, true);
+            thread_pool->addObjJob(this, &raft::send_append_entries, id, arg);
+          }
+          RAFT_LOG("heartbeat sent");
+        }
+
+
 //        // append empty log of current term
 //        command cmd;
 //        log_entry<command> empty_log(current_term, log.size(), cmd);
@@ -664,9 +674,12 @@ void raft<state_machine, command>::handle_append_entries_reply(int node,
 
         RAFT_LOG("handle_append_entries_reply: handle FAILURE");
 
-        // update next_index to smaller
-        int old_next_index = next_index[node];
-        next_index[node] = std::max(old_next_index - 1, 1);
+//        // update next_index to smaller
+//        int old_next_index = next_index[node];
+//        next_index[node] = std::max(old_next_index - 1, 1);
+
+        // trick: directly update next_index to 1
+        next_index[node] = 1;
 
       }
     }

@@ -139,6 +139,11 @@ void raft_storage<command>::restore_log(std::vector<log_entry<command>> &log) {
 
     }
 
+    // pop back for deleted logs
+    int last_index = log.back().index_;
+    STORAGE_LOG("log restore last_index %d, log.size() %d", last_index, log.size());
+    while(log.size() > last_index + 1) log.pop_back();
+
     ifs.close();
   }
 }
