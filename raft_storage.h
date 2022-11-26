@@ -28,18 +28,23 @@ class raft_storage {
   ~raft_storage();
   // Lab3: Your code here
   void persist_log(const log_entry<command> &log);
-  void persist_logs(const std::vector<log_entry<command> > &logs);
-  void restore_log(std::vector<log_entry<command> > &log);
+  void persist_logs(const std::vector<log_entry<command>> &logs);
+  void restore_log(std::vector<log_entry<command>> &log);
 
   void persist_metadata(int current_term, int voted_for);
   void restore_metadata(int &current_term, int &voted_for);
 
+  void persist_snapshot(int last_included_index, int last_included_term, const std::vector<char> &data);
+  void restore_snapshot(int &last_included_index, int &last_included_term, std::vector<char> &data);
+
  private:
   std::mutex mtx;
+  std::mutex snapshot_mtx;
   // Lab3: Your code here
   std::string dir_;
   std::string log_file_path;
   std::string metadata_file_path;
+  std::string snapshot_file_path;
 };
 
 template<typename command>
@@ -48,6 +53,7 @@ raft_storage<command>::raft_storage(const std::string &dir) {
   dir_ = dir;
   log_file_path = dir + "/log_file.log";
   metadata_file_path = dir + "/metadata_file.log";
+  snapshot_file_path = dir + "/snapshot";
 }
 
 template<typename command>
@@ -80,15 +86,14 @@ void raft_storage<command>::persist_log(const log_entry<command> &log) {
   STORAGE_LOG("log persist success, term %d, index %d", log.term_, log.index_);
 }
 
-
 template<typename command>
-void raft_storage<command>::persist_logs(const std::vector<log_entry<command> > &logs) {
+void raft_storage<command>::persist_logs(const std::vector<log_entry<command>> &logs) {
   // Lab3: Your code here
   std::unique_lock<std::mutex> lock(mtx);
   std::ofstream ofs;
   ofs.open(log_file_path, std::ios::out | std::ios::app | std::ios::binary);
   if (ofs.is_open()) {
-    for(log_entry<command> log : logs){
+    for (log_entry<command> log : logs) {
       ofs.write(reinterpret_cast<char *>(&(log.term_)), sizeof(int));
       ofs.write(reinterpret_cast<char *>(&(log.index_)), sizeof(int));
 
@@ -142,7 +147,7 @@ void raft_storage<command>::restore_log(std::vector<log_entry<command>> &log) {
     // pop back for deleted logs
     int last_index = log.back().index_;
     STORAGE_LOG("log restore last_index %d, log.size() %d", last_index, log.size());
-    while(log.size() > last_index + 1) log.pop_back();
+    while (log.size() > last_index + 1) log.pop_back();
 
     ifs.close();
   }
@@ -172,6 +177,48 @@ void raft_storage<command>::restore_metadata(int &current_term, int &voted_for) 
         && ifs.read(reinterpret_cast<char *>(&voted_for), sizeof(int))) {
     }
 
+    ifs.close();
+  }
+}
+
+template<typename command>
+void raft_storage<command>::persist_snapshot(int last_included_index,
+                                             int last_included_term,
+                                             const std::vector<char> &data) {
+  std::unique_lock<std::mutex> lock(snapshot_mtx);
+  std::ofstream ofs;
+  ofs.open(snapshot_file_path, std::ios::out | std::ios::binary);
+  if(ofs.is_open()){
+    ofs.write(reinterpret_cast<char *>(&(last_included_index)), sizeof(int));
+    ofs.write(reinterpret_cast<char *>(&(last_included_term)), sizeof(int));
+    int size = data.size();
+    ofs.write(reinterpret_cast<char *>(&(size)), sizeof(int));
+    std::string buf(data.begin(), data.end());
+    ofs.write(const_cast<char *>(buf.c_str()), size);
+    ofs.close();
+  }
+
+}
+
+template<typename command>
+void raft_storage<command>::restore_snapshot(int &last_included_index,
+                                             int &last_included_term,
+                                             std::vector<char> &data) {
+  std::unique_lock<std::mutex> lock(snapshot_mtx);
+  std::ifstream ifs;
+  ifs.open(snapshot_file_path, std::ios::in | std::ios::binary);
+  if (ifs.is_open()) {
+
+    ifs.read(reinterpret_cast<char *>(&last_included_index), sizeof(int));
+    ifs.read(reinterpret_cast<char *>(&last_included_term), sizeof(int));
+    int size;
+    ifs.read(reinterpret_cast<char *>(&size), sizeof(int));
+    char *buf = new char[size];
+    ifs.read(buf, size);
+    std::string string_buf(buf, size);
+    delete[] buf;
+    std::vector<char> data_(string_buf.begin(), string_buf.end());
+    data.swap(data_);
     ifs.close();
   }
 }

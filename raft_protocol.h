@@ -78,6 +78,7 @@ class log_entry {
   int index_;
 
   log_entry() {}
+  log_entry(int term, int index) : term_(term), index_(index) {}
   log_entry(int term, int index, const command &cmd) : term_(term), index_(index), command_(cmd) {}
 
 };
@@ -147,7 +148,7 @@ class append_entries_args {
         prev_log_index_(prev_log_index),
         prev_log_term_(prev_log_term),
         leader_commit_(leader_commit),
-        entries_(std::move(entries)),
+        entries_(entries),
         heartbeat_(heartbeat) {}
 
   append_entries_args(int term,
@@ -201,6 +202,45 @@ unmarshall &operator>>(unmarshall &m, append_entries_reply &reply);
 class install_snapshot_args {
  public:
   // Lab3: Your code here
+
+  // leader's term
+  int term_;
+
+  // so follower can redirect clients
+  int leader_id_;
+
+  // the snapshot replaces all entries up through and including this index
+  int last_included_index_;
+
+  // term of last_included_index_
+  int last_included_term_;
+
+  // raw bytes of the snapshot chunk (starting at offset, but here is all)
+  std::vector<char> data_;
+
+  //  since we do not partition the snapshot,
+  //  just send the whole snapshot in a single RPC.
+  //  no need for below paras
+
+  //  // byte offset where chunk is positioned in the snapshot file
+  //  int offset;
+  //
+  //  // true if this is the last chunk
+  //  bool done;
+
+  install_snapshot_args() {}
+  install_snapshot_args(int term,
+                        int leader_id,
+                        int last_included_index,
+                        int last_included_term,
+                        const std::vector<char> &data)
+      : term_(term),
+        leader_id_(leader_id),
+        last_included_term_(last_included_term),
+        last_included_index_(last_included_index),
+        data_(data) {
+
+  }
 };
 
 marshall &operator<<(marshall &m, const install_snapshot_args &args);
@@ -209,6 +249,11 @@ unmarshall &operator>>(unmarshall &m, install_snapshot_args &args);
 class install_snapshot_reply {
  public:
   // Lab3: Your code here
+  // current term, for leader to update itself
+  int term_;
+
+  install_snapshot_reply() {}
+  install_snapshot_reply(int term) : term_(term) {}
 };
 
 marshall &operator<<(marshall &m, const install_snapshot_reply &reply);
