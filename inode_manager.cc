@@ -113,8 +113,9 @@ inode_manager::alloc_inode(uint32_t type)
    */
   if(PRINT_LOG) printf("\tim: alloc_inode %d\n", type);
 
-  // check from where last alloc
-  static uint32_t idx = 0;
+//  // check from where last alloc
+//  static uint32_t idx = 0;
+  uint32_t idx = last_alloc_idx;
   // check every inode once
   for(int i = 0; i < INODE_NUM; i++){
     idx = (idx + 1) % INODE_NUM;
@@ -127,6 +128,7 @@ inode_manager::alloc_inode(uint32_t type)
     inode->mtime = time(NULL);
     inode->ctime = time(NULL);
     put_inode(idx, inode);
+    last_alloc_idx = idx;
     free(inode);
     return idx;
   }

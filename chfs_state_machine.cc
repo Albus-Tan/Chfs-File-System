@@ -2,6 +2,7 @@
 
 chfs_command_raft::chfs_command_raft() : cmd_tp(CMD_NONE) {
   // Lab3: Your code here
+  res = std::make_shared<result>();
 }
 
 chfs_command_raft::chfs_command_raft(const chfs_command_raft &cmd) :

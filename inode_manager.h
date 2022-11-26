@@ -85,6 +85,8 @@ class inode_manager {
   void put_inode(uint32_t inum, struct inode *ino);
   uint32_t get_block_id(uint32_t i, inode_t *inode);
 
+  uint32_t last_alloc_idx = 0;
+
  public:
   inode_manager();
   uint32_t alloc_inode(uint32_t type);
