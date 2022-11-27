@@ -25,13 +25,13 @@ unmarshall &operator>>(unmarshall &u, request_vote_reply &reply) {
 
 marshall &operator<<(marshall &m, const append_entries_reply &args) {
   // Lab3: Your code here
-  m << args.term_ << args.success_;
+  m << args.term_ << args.success_ << args.match_index_;
   return m;
 }
 
 unmarshall &operator>>(unmarshall &m, append_entries_reply &args) {
   // Lab3: Your code here
-  m >> args.term_ >> args.success_;
+  m >> args.term_ >> args.success_ >> args.match_index_;
   return m;
 }
 

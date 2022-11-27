@@ -192,8 +192,13 @@ class append_entries_reply {
   // prev_Log_index and prev_log_term
   bool success_;
 
+  // tell leader index of highest log entry has been
+  // replicated, add for snapshot case
+  int match_index_;
+
   append_entries_reply() {}
-  append_entries_reply(int term, bool success) : term_(term), success_(success) {}
+  append_entries_reply(int term, bool success, int match_index)
+      : term_(term), success_(success), match_index_(match_index) {}
 };
 
 marshall &operator<<(marshall &m, const append_entries_reply &reply);
