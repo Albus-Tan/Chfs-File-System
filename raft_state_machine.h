@@ -10,6 +10,9 @@
 #include <string>
 #include <vector>
 
+// When the state machines append or apply a log, the raft_command will be used.
+// The state machines process identical sequences of raft_command from the logs,
+// so they produce the same outputs.
 class raft_command {
 public:
     virtual ~raft_command() {
@@ -21,6 +24,7 @@ public:
     virtual void deserialize(const char *buf, int size) = 0;
 };
 
+// represents the replicated state machines in Raft
 class raft_state_machine {
 public:
     virtual ~raft_state_machine() {
