@@ -18,9 +18,13 @@
 using namespace std;
 
 struct KeyVal {
-    string key;
-    string val;
+  string key;
+  string val;
 };
+
+bool IsLetter(char c) {
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
 
 //
 // The map function is called once for each file of input. The first
@@ -29,10 +33,29 @@ struct KeyVal {
 // and look only at the contents argument. The return value is a slice
 // of key/value pairs.
 //
-vector<KeyVal> Map(const string &filename, const string &content)
-{
-	// Copy your code from mr_sequential.cc here.
+vector<KeyVal> Map(const string &filename, const string &content) {
+  // Copy your code from mr_sequential.cc here.
+  // Hints: split contents into an array of words.
+  std::vector<char> vec_buf;
+  vec_buf.resize(content.size());
+  vec_buf.assign(content.begin(), content.end());
 
+  vector<KeyVal> kv_pairs;
+  std::vector<char> last_word;
+  for (auto c : vec_buf) {
+    if (IsLetter(c)) {
+      last_word.push_back(c);
+    } else {
+      if (last_word.empty()) continue;
+      KeyVal kv;
+      kv.key.assign(last_word.begin(), last_word.end());
+      kv.val = "1";
+      kv_pairs.push_back(kv);
+      last_word.clear();
+    }
+  }
+
+  return kv_pairs;
 }
 
 //
@@ -40,101 +63,216 @@ vector<KeyVal> Map(const string &filename, const string &content)
 // map tasks, with a list of all the values created for that key by
 // any map task.
 //
-string Reduce(const string &key, const vector < string > &values)
-{
-    // Copy your code from mr_sequential.cc here.
-
+string Reduce(const string &key, const vector<string> &values) {
+  // Copy your code from mr_sequential.cc here.
+  // Hints: return the number of occurrences of the word.
+  return to_string(values.size());
 }
-
 
 typedef vector<KeyVal> (*MAPF)(const string &key, const string &value);
 typedef string (*REDUCEF)(const string &key, const vector<string> &values);
 
 class Worker {
-public:
-	Worker(const string &dst, const string &dir, MAPF mf, REDUCEF rf);
+ public:
+  Worker(const string &dst, const string &dir, MAPF mf, REDUCEF rf);
 
-	void doWork();
+  void doWork();
 
-private:
-	void doMap(int index, const vector<string> &filenames);
-	void doReduce(int index);
-	void doSubmit(mr_tasktype taskType, int index);
+ private:
+  void doMap(int index, const vector<string> &filenames);
+  void doReduce(int index);
+  void doSubmit(mr_tasktype taskType, int index);
+  void generateIntermediateFile(int map_task_num, int reduce_task_num, const string &buf);
 
-	mutex mtx;
-	int id;
+  mutex mtx;
+  int id;
 
-	rpcc *cl;
-	std::string basedir;
-	MAPF mapf;
-	REDUCEF reducef;
+  rpcc *cl;
+  std::string basedir;
+  MAPF mapf;
+  REDUCEF reducef;
 };
 
+Worker::Worker(const string &dst, const string &dir, MAPF mf, REDUCEF rf) {
+  this->basedir = dir;
+  this->mapf = mf;
+  this->reducef = rf;
 
-Worker::Worker(const string &dst, const string &dir, MAPF mf, REDUCEF rf)
-{
-	this->basedir = dir;
-	this->mapf = mf;
-	this->reducef = rf;
-
-	sockaddr_in dstsock;
-	make_sockaddr(dst.c_str(), &dstsock);
-	this->cl = new rpcc(dstsock);
-	if (this->cl->bind() < 0) {
-		printf("mr worker: call bind error\n");
-	}
+  sockaddr_in dstsock;
+  make_sockaddr(dst.c_str(), &dstsock);
+  this->cl = new rpcc(dstsock);
+  if (this->cl->bind() < 0) {
+    printf("mr worker: call bind error\n");
+  }
 }
 
-void Worker::doMap(int index, const vector<string> &filenames)
-{
-	// Lab4: Your code goes here.
+void Worker::generateIntermediateFile(int map_task_num, int reduce_task_num, const string &buf) {
+  // A reasonable naming convention for intermediate files is mr-X-Y,
+  // where X is the Map task number, and Y is the reduce task number.
+  // The worker's map task code will need a way to store intermediate
+  // key/value pairs in files in a way that can be correctly read
+  // back during reduce tasks.
+  ofstream out(basedir + "mr-" + to_string(map_task_num) + "-" + to_string(reduce_task_num));
+  out << buf;
+  out.close();
+}
+
+void Worker::doMap(int index, const vector<string> &filenames) {
+  // Lab4: Your code goes here.
+  // Each mapper only processes one file at one time
+  string filename = filenames.front();
+
+  string content;
+  // read file to content
+  getline(ifstream(filename), content, '\0');
+  vector<KeyVal> kv_pairs = mapf(filename, content);
+
+  // The Map part of your workers can use a hash function
+  // to distribute the intermediate key-values to different
+  // files intended for different Reduce tasks.
+  std::hash<std::string> doHash;
+  string buf0, buf1, buf2, buf3;
+  for (auto kv_pair : kv_pairs) {
+    // hash by key
+    string kv_str = kv_pair.key + ' ' + kv_pair.val + '\n';
+    switch (doHash(kv_pair.key) % REDUCER_COUNT) {
+      case 0: {
+        buf0 = buf0 + kv_str;
+        break;
+      }
+      case 1: {
+        buf1 = buf1 + kv_str;
+        break;
+      }
+      case 2: {
+        buf2 = buf2 + kv_str;
+        break;
+      }
+      case 3: {
+        buf3 = buf3 + kv_str;
+        break;
+      }
+    }
+  }
+
+  vector<string> bufs;
+  bufs.push_back(buf0);
+  bufs.push_back(buf1);
+  bufs.push_back(buf2);
+  bufs.push_back(buf3);
+
+  int reduce_task_num = 0;
+  while (reduce_task_num < REDUCER_COUNT) {
+    generateIntermediateFile(index, reduce_task_num, bufs[reduce_task_num]);
+    ++reduce_task_num;
+  }
 
 }
 
-void Worker::doReduce(int index)
-{
-	// Lab4: Your code goes here.
+void Worker::doReduce(int index) {
+  // Lab4: Your code goes here.
+
+  map<string, uint64_t> word_num_map;
+
+  int map_task_num = 0;
+  string buf;
+  string key;
+  uint64_t num;
+  // check files
+  while(1){
+    buf = "";
+    ifstream in(basedir + "mr-" + to_string(map_task_num) + "-" + to_string(index));
+    if(in.is_open()){
+      while(getline(in, buf)){
+        stringstream ss;
+        ss << buf;
+        ss >> key >> num;
+        if(word_num_map.count(key) == 0){
+          word_num_map.emplace(key, num);
+        } else {
+          word_num_map[key] += num;
+        }
+//        auto res = word_num_map.try_emplace(key, num);
+//        if(!res.second){
+//          *(res.first)->second += num;
+//        }
+      }
+      in.close();
+      ++map_task_num;
+    } else {
+      // no larger map_task_num file
+      in.close();
+      return;
+    }
+  }
+
+  string res_content;
+  for(auto word_cnt_pair : word_num_map){
+    res_content  = res_content + word_cnt_pair.first + ' ' + to_string(word_cnt_pair.second) + '\n';
+  }
+  ofstream out(basedir+"/mr-out"+to_string(index));
+  out << res_content;
+  out.close();
 
 }
 
-void Worker::doSubmit(mr_tasktype taskType, int index)
-{
-	bool b;
-	mr_protocol::status ret = this->cl->call(mr_protocol::submittask, taskType, index, b);
-	if (ret != mr_protocol::OK) {
-		fprintf(stderr, "submit task failed\n");
-		exit(-1);
-	}
+void Worker::doSubmit(mr_tasktype taskType, int index) {
+  bool b;
+  mr_protocol::status ret = this->cl->call(mr_protocol::submittask, taskType, index, b);
+  if (ret != mr_protocol::OK) {
+    fprintf(stderr, "submit task failed\n");
+    exit(-1);
+  }
 }
 
-void Worker::doWork()
-{
-	for (;;) {
+void Worker::doWork() {
+  for (;;) {
 
-		//
-		// Lab4: Your code goes here.
-		// Hints: send asktask RPC call to coordinator
-		// if mr_tasktype::MAP, then doMap and doSubmit
-		// if mr_tasktype::REDUCE, then doReduce and doSubmit
-		// if mr_tasktype::NONE, meaning currently no work is needed, then sleep
-		//
+    //
+    // Lab4: Your code goes here.
+    // Hints: send asktask RPC call to coordinator
+    int no_use;
+    mr_protocol::AskTaskResponse reply;
+    mr_protocol::status ret = this->cl->call(mr_protocol::asktask, no_use, reply);
+    if (ret != mr_protocol::OK) {
+      fprintf(stderr, "asktask RPC failed\n");
+      exit(-1);
+    }
 
-	}
+    switch (reply.tasktype) {
+      case mr_tasktype::MAP: {
+        // if mr_tasktype::MAP, then doMap and doSubmit
+        doMap(reply.index, {reply.filename});
+        doSubmit(mr_tasktype::MAP, reply.index);
+        break;
+      }
+      case mr_tasktype::REDUCE: {
+        // if mr_tasktype::REDUCE, then doReduce and doSubmit
+        doReduce(reply.index);
+        doSubmit(mr_tasktype::REDUCE, reply.index);
+        break;
+      }
+      case mr_tasktype::NONE: {
+        // if mr_tasktype::NONE, meaning currently no work is needed, then sleep
+        sleep(1);
+        break;
+      }
+    }
+  }
 }
 
-int main(int argc, char **argv)
-{
-	if (argc != 3) {
-		fprintf(stderr, "Usage: %s <coordinator_listen_port> <intermediate_file_dir> \n", argv[0]);
-		exit(1);
-	}
+int main(int argc, char **argv) {
+  if (argc != 3) {
+    fprintf(stderr, "Usage: %s <coordinator_listen_port> <intermediate_file_dir> \n", argv[0]);
+    exit(1);
+  }
 
-	MAPF mf = Map;
-	REDUCEF rf = Reduce;
-	
-	Worker w(argv[1], argv[2], mf, rf);
-	w.doWork();
+  MAPF mf = Map;
+  REDUCEF rf = Reduce;
 
-	return 0;
+  Worker w(argv[1], argv[2], mf, rf);
+  w.doWork();
+
+  return 0;
 }
 
