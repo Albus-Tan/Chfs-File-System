@@ -98,12 +98,14 @@ class Worker {
 
   rpcc *cl;
   std::string basedir;
+  std::string resdir;
   MAPF mapf;
   REDUCEF reducef;
 };
 
 Worker::Worker(const string &dst, const string &dir, MAPF mf, REDUCEF rf) {
-  this->basedir = dir;
+  this->resdir = dir;
+  this->basedir = "/tmp/" + dir;
   this->mapf = mf;
   this->reducef = rf;
 
@@ -193,15 +195,15 @@ void Worker::doReduce(int index) {
   string key;
   uint64_t num;
   // check files
-  while(1){
+  while (1) {
     buf = "";
     ifstream in(basedir + "mr-" + to_string(map_task_num) + "-" + to_string(index));
-    if(in.is_open()){
-      while(getline(in, buf)){
+    if (in.is_open()) {
+      while (getline(in, buf)) {
         stringstream ss;
         ss << buf;
         ss >> key >> num;
-        if(word_num_map.count(key) == 0){
+        if (word_num_map.count(key) == 0) {
           word_num_map.emplace(key, num);
         } else {
           word_num_map[key] += num;
@@ -220,12 +222,11 @@ void Worker::doReduce(int index) {
     }
   }
 
-
   string res_content = "";
-  for(auto word_cnt_pair : word_num_map){
-    res_content  = res_content + word_cnt_pair.first + ' ' + to_string(word_cnt_pair.second) + '\n';
+  for (auto word_cnt_pair : word_num_map) {
+    res_content = res_content + word_cnt_pair.first + ' ' + to_string(word_cnt_pair.second) + '\n';
   }
-  ofstream out(basedir+"/mr-out"+to_string(index));
+  ofstream out(resdir + "/mr-out" + to_string(index));
   out << res_content;
   WORKER_LOG("result file mr-out%d generated", index)
   out.close();
@@ -278,7 +279,6 @@ void Worker::doWork() {
       WORKER_LOG("asktask RPC failed")
     }
     sleep(1);
-
 
   }
 }
