@@ -52,6 +52,15 @@ marshall &operator<<(marshall &m, const chfs_command_raft &cmd);
 unmarshall &operator>>(unmarshall &u, chfs_command_raft &cmd);
 
 class chfs_state_machine : public raft_state_machine {
+  #define CHFS_STATE_MACHINE_LOG(fmt, args...) \
+    do {                       \
+    } while (0);
+
+//#define CHFS_STATE_MACHINE_LOG(fmt, args...)                                                                                   \
+//     do {                                                                                                                   \
+//         printf("[chfs_state_machine][%s:%d:%s] " fmt "\n", __FILE__, __LINE__, __FUNCTION__ , ##args); \
+//     } while (0);
+
  public:
   virtual ~chfs_state_machine() {
   }

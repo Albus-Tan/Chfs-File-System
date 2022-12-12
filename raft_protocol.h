@@ -4,8 +4,6 @@
 #include "rpc.h"
 #include "raft_state_machine.h"
 
-#define MAX_BUF_SIZE 8192
-
 enum raft_rpc_opcodes {
   op_request_vote = 0x1212,
   op_append_entries = 0x3434,
@@ -87,9 +85,11 @@ template<typename command>
 marshall &operator<<(marshall &m, const log_entry<command> &entry) {
   // Lab3: Your code here
   int size = entry.command_.size();
-  char buf[MAX_BUF_SIZE];
+  // char buf[MAX_BUF_SIZE];
+  char *buf = (char *)malloc(size);
   entry.command_.serialize(buf, size);
   std::string str(buf, size);
+  delete buf;
   m << entry.term_ << entry.index_ << size << str;
   return m;
 }

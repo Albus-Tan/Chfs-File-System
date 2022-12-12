@@ -45,7 +45,9 @@ void chfs_command_raft::serialize(char *buf_out, int size) const {
   memcpy(buf_out + pos, reinterpret_cast<char *>(const_cast<uint32_t *>(&type)), sizeof(uint32_t));
   pos += sizeof(uint32_t);
   // extent_protocol::extentid_t id
-  memcpy(buf_out + pos, reinterpret_cast<char *>(const_cast<extent_protocol::extentid_t *>(&id)), sizeof(extent_protocol::extentid_t));
+  memcpy(buf_out + pos,
+         reinterpret_cast<char *>(const_cast<extent_protocol::extentid_t *>(&id)),
+         sizeof(extent_protocol::extentid_t));
   pos += sizeof(extent_protocol::extentid_t);
   // size of std::string buf
   int buf_size = buf.size();
@@ -84,7 +86,7 @@ void chfs_command_raft::deserialize(const char *buf_in, int size) {
 
 marshall &operator<<(marshall &m, const chfs_command_raft &cmd) {
   // Lab3: Your code here
-  m << (int)cmd.cmd_tp << cmd.type << cmd.id << cmd.buf;
+  m << (int) cmd.cmd_tp << cmd.type << cmd.id << cmd.buf;
   return m;
 }
 
@@ -138,13 +140,18 @@ void chfs_state_machine::apply_log(raft_command &cmd) {
   {
     // fill result
     std::unique_lock<std::mutex> lock(chfs_cmd.res->mtx);
+    CHFS_STATE_MACHINE_LOG("chfs_cmd.res->mtx get, start to fill res, chfs_cmd.id %llu", chfs_cmd.id)
     chfs_cmd.res->tp = chfs_cmd.cmd_tp;
     chfs_cmd.res->id = res_id;
     chfs_cmd.res->buf = res_buf;
     chfs_cmd.res->attr = res_attr;
 
+    CHFS_STATE_MACHINE_LOG("start SET chfs_cmd.res->done = true")
     chfs_cmd.res->done = true;  // set done true
+    CHFS_STATE_MACHINE_LOG("finish SET chfs_cmd.res->done = true")
+    CHFS_STATE_MACHINE_LOG("start notify the caller")
     chfs_cmd.res->cv.notify_all();  // notify the caller
+    CHFS_STATE_MACHINE_LOG("finish notify the caller")
   }
   return;
 }

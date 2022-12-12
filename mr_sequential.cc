@@ -9,6 +9,16 @@
 #include <vector>
 #include <algorithm>
 
+//#define SEQ_DBG_LOG(fmt, args...) \
+//    do {                       \
+//    } while (0);
+
+#define SEQ_DBG_LOG(fmt, args...)                                                                                   \
+     do {                                                                                                         \
+         printf("[MR_SEQ_LOG][%s:%d:%s] " fmt "\n", __FILE__, __LINE__, __FUNCTION__ , ##args);                     \
+         fflush(stdout);                                                                                                           \
+     } while (0);
+
 using namespace std;
 
 typedef struct {
@@ -29,6 +39,7 @@ bool IsLetter(char c) {
 // of key/value pairs.
 //
 vector<KeyVal> Map(const string &filename, const string &content) {
+  SEQ_DBG_LOG("START")
   // Your code goes here
   // Hints: split contents into an array of words.
   std::vector<char> vec_buf;
@@ -60,6 +71,7 @@ vector<KeyVal> Map(const string &filename, const string &content) {
 // any map task.
 //
 string Reduce(const string &key, const vector<string> &values) {
+  SEQ_DBG_LOG("START")
   // Your code goes here
   // Hints: return the number of occurrences of the word.
   return to_string(values.size());
@@ -80,13 +92,19 @@ int main(int argc, char **argv) {
   // accumulate the intermediate Map output.
   //
 
+  SEQ_DBG_LOG("START")
+
   for (int i = 1; i < argc; ++i) {
 
     string filename = argv[i];
     string content;
 
+    SEQ_DBG_LOG("start Read the whole file into the buffer")
+
     // Read the whole file into the buffer.
     getline(ifstream(filename), content, '\0');
+
+    SEQ_DBG_LOG("finish Read the whole file into the buffer")
 
     vector<KeyVal> KVA = Map(filename, content);
 
@@ -100,10 +118,16 @@ int main(int argc, char **argv) {
   // rather than being partitioned into NxM buckets.
   //
 
+  SEQ_DBG_LOG("start sort")
+
   sort(intermediate.begin(), intermediate.end(),
        [](KeyVal const &a, KeyVal const &b) {
          return a.key < b.key;
        });
+
+  SEQ_DBG_LOG("finish sort")
+
+  SEQ_DBG_LOG("start call Reduce on each distinct key in intermediate[]")
 
   //
   // call Reduce on each distinct key in intermediate[],

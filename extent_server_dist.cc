@@ -71,7 +71,7 @@ int extent_server_dist::put(extent_protocol::extentid_t id, std::string buf, int
     mssleep(sleep_interval_milliseconds);
   } while (!new_command_sent);
 
-  EXTENT_SERVER_DIST_LOG("new_command successfully sent to leader");
+  EXTENT_SERVER_DIST_LOG("new_command successfully sent to leader, id %llu, buf size %llu", cmd.id, buf.size());
 
   if (new_command_sent) {
     std::unique_lock<std::mutex> lock(cmd.res->mtx);
@@ -110,6 +110,7 @@ int extent_server_dist::get(extent_protocol::extentid_t id, std::string &buf) {
   } while (!new_command_sent);
   if (new_command_sent) {
     std::unique_lock<std::mutex> lock(cmd.res->mtx);
+    EXTENT_SERVER_DIST_LOG("new_command successfully sent to leader, id %llu", cmd.id);
     if (!cmd.res->done) {
       ASSERT(
           cmd.res->cv.wait_until(lock,
@@ -146,6 +147,7 @@ int extent_server_dist::getattr(extent_protocol::extentid_t id, extent_protocol:
   } while (!new_command_sent);
   if (new_command_sent) {
     std::unique_lock<std::mutex> lock(cmd.res->mtx);
+    EXTENT_SERVER_DIST_LOG("new_command successfully sent to leader, id %llu", cmd.id);
     if (!cmd.res->done) {
       ASSERT(
           cmd.res->cv.wait_until(lock,
@@ -181,6 +183,7 @@ int extent_server_dist::remove(extent_protocol::extentid_t id, int &) {
   } while (!new_command_sent);
   if (new_command_sent) {
     std::unique_lock<std::mutex> lock(cmd.res->mtx);
+    EXTENT_SERVER_DIST_LOG("new_command successfully sent to leader, id %llu", cmd.id);
     if (!cmd.res->done) {
       ASSERT(
           cmd.res->cv.wait_until(lock,
