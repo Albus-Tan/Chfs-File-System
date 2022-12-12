@@ -13,6 +13,15 @@
 
 using namespace std;
 
+#define COO_LOG(fmt, args...) \
+    do {                       \
+    } while (0);
+
+//#define COO_LOG(fmt, args...)                                                                                   \
+//     do {                                                                                                         \
+//         printf("[MR_COORDINATOR_LOG][%s:%d:%s] " fmt "\n", __FILE__, __LINE__, __FUNCTION__ , ##args);                     \
+//     } while (0);
+
 struct Task {
   int taskType;     // should be either Mapper or Reducer
   bool isAssigned;  // has been assigned to a worker
@@ -50,28 +59,36 @@ class Coordinator {
 mr_protocol::status Coordinator::askTask(int, mr_protocol::AskTaskResponse &reply) {
   // Lab4 : Your code goes here.
   if (!isFinishedMap()) {
-    std::unique_lock<std::mutex> lock(mtx);
+    mtx.lock();
     reply.tasktype = mr_tasktype::NONE;
     // map not finished
-    for (auto task : mapTasks) {
-      if(task.isAssigned) continue;
-      reply.tasktype = mr_tasktype::MAP;
-      reply.index = task.index;
-      reply.filename = files[task.index];
-      task.isAssigned = true;
-      break;
+    for (auto &task : mapTasks) {
+      if(!task.isAssigned){
+        reply.tasktype = mr_tasktype::MAP;
+        reply.index = task.index;
+        reply.filename = files[task.index];
+        task.isAssigned = true;
+        COO_LOG("assign mapTask index %d", task.index)
+        mtx.unlock();
+        return mr_protocol::OK;
+      }
     }
+    mtx.unlock();
   } else if (!isFinishedReduce()) {
-    std::unique_lock<std::mutex> lock(mtx);
+    mtx.lock();
     reply.tasktype = mr_tasktype::NONE;
     // map finished, reduce not finished
-    for (auto task : reduceTasks) {
-      if(task.isAssigned) continue;
-      reply.tasktype = mr_tasktype::REDUCE;
-      reply.index = task.index;
-      task.isAssigned = true;
-      break;
+    for (auto &task : reduceTasks) {
+      if(!task.isAssigned){
+        reply.tasktype = mr_tasktype::REDUCE;
+        reply.index = task.index;
+        task.isAssigned = true;
+        COO_LOG("assign reduceTask index %d", task.index)
+        mtx.unlock();
+        return mr_protocol::OK;
+      }
     }
+    mtx.unlock();
   } else {
     // all finished
     reply.tasktype = mr_tasktype::NONE;
@@ -81,25 +98,29 @@ mr_protocol::status Coordinator::askTask(int, mr_protocol::AskTaskResponse &repl
 
 mr_protocol::status Coordinator::submitTask(int taskType, int index, bool &success) {
   // Lab4 : Your code goes here.
-  std::unique_lock<std::mutex> lock(mtx);
+  mtx.lock();
   switch (taskType) {
     case mr_tasktype::MAP: {
       ++completedMapCount;
       mapTasks[index].isCompleted = true;
+      success = true;
       break;
     }
     case mr_tasktype::REDUCE: {
       ++completedReduceCount;
       reduceTasks[index].isCompleted = true;
+      success = true;
       if (this->completedReduceCount >= long(this->reduceTasks.size())) {
         isFinished = true;
       }
       break;
     }
     case mr_tasktype::NONE: {
+      success = true;
       break;
     }
   }
+  mtx.unlock();
   return mr_protocol::OK;
 }
 
@@ -153,10 +174,13 @@ Coordinator::Coordinator(const vector<string> &files, int nReduce) {
   this->completedReduceCount = 0;
 
   int filesize = files.size();
+  COO_LOG("filesize %d", filesize)
   for (int i = 0; i < filesize; i++) {
+    COO_LOG("mapTask %d init", i)
     this->mapTasks.push_back(Task{mr_tasktype::MAP, false, false, i});
   }
   for (int i = 0; i < nReduce; i++) {
+    COO_LOG("reduceTask %d init", i)
     this->reduceTasks.push_back(Task{mr_tasktype::REDUCE, false, false, i});
   }
 }

@@ -17,6 +17,15 @@
 
 using namespace std;
 
+#define WORKER_LOG(fmt, args...) \
+    do {                       \
+    } while (0);
+
+//#define WORKER_LOG(fmt, args...)                                                                                   \
+//     do {                                                                                                         \
+//         printf("[MR_WORKER_LOG][%s:%d:%s] " fmt "\n", __FILE__, __LINE__, __FUNCTION__ , ##args);                     \
+//     } while (0);
+
 struct KeyVal {
   string key;
   string val;
@@ -112,6 +121,7 @@ void Worker::generateIntermediateFile(int map_task_num, int reduce_task_num, con
   // The worker's map task code will need a way to store intermediate
   // key/value pairs in files in a way that can be correctly read
   // back during reduce tasks.
+  WORKER_LOG("generateIntermediateFile mr-%d-%d", map_task_num, reduce_task_num)
   ofstream out(basedir + "mr-" + to_string(map_task_num) + "-" + to_string(reduce_task_num));
   out << buf;
   out.close();
@@ -121,6 +131,8 @@ void Worker::doMap(int index, const vector<string> &filenames) {
   // Lab4: Your code goes here.
   // Each mapper only processes one file at one time
   string filename = filenames.front();
+
+  WORKER_LOG("doMap filename %s", filename.data())
 
   string content;
   // read file to content
@@ -174,6 +186,8 @@ void Worker::doReduce(int index) {
 
   map<string, uint64_t> word_num_map;
 
+  WORKER_LOG("doReduce index %d", index)
+
   int map_task_num = 0;
   string buf;
   string key;
@@ -202,16 +216,18 @@ void Worker::doReduce(int index) {
     } else {
       // no larger map_task_num file
       in.close();
-      return;
+      break;
     }
   }
 
-  string res_content;
+
+  string res_content = "";
   for(auto word_cnt_pair : word_num_map){
     res_content  = res_content + word_cnt_pair.first + ' ' + to_string(word_cnt_pair.second) + '\n';
   }
   ofstream out(basedir+"/mr-out"+to_string(index));
   out << res_content;
+  WORKER_LOG("result file mr-out%d generated", index)
   out.close();
 
 }
@@ -234,30 +250,36 @@ void Worker::doWork() {
     int no_use;
     mr_protocol::AskTaskResponse reply;
     mr_protocol::status ret = this->cl->call(mr_protocol::asktask, no_use, reply);
-    if (ret != mr_protocol::OK) {
-      fprintf(stderr, "asktask RPC failed\n");
-      exit(-1);
+    WORKER_LOG("asktask RPC sent")
+    if (ret == mr_protocol::OK) {
+      switch (reply.tasktype) {
+        case mr_tasktype::MAP: {
+          WORKER_LOG("mr_tasktype::MAP")
+          // if mr_tasktype::MAP, then doMap and doSubmit
+          doMap(reply.index, {reply.filename});
+          doSubmit(mr_tasktype::MAP, reply.index);
+          break;
+        }
+        case mr_tasktype::REDUCE: {
+          WORKER_LOG("mr_tasktype::REDUCE")
+          // if mr_tasktype::REDUCE, then doReduce and doSubmit
+          doReduce(reply.index);
+          doSubmit(mr_tasktype::REDUCE, reply.index);
+          break;
+        }
+        case mr_tasktype::NONE: {
+          WORKER_LOG("mr_tasktype::NONE")
+          // if mr_tasktype::NONE, meaning currently no work is needed, then sleep
+          sleep(1);
+          break;
+        }
+      }
+    } else {
+      WORKER_LOG("asktask RPC failed")
     }
+    sleep(1);
 
-    switch (reply.tasktype) {
-      case mr_tasktype::MAP: {
-        // if mr_tasktype::MAP, then doMap and doSubmit
-        doMap(reply.index, {reply.filename});
-        doSubmit(mr_tasktype::MAP, reply.index);
-        break;
-      }
-      case mr_tasktype::REDUCE: {
-        // if mr_tasktype::REDUCE, then doReduce and doSubmit
-        doReduce(reply.index);
-        doSubmit(mr_tasktype::REDUCE, reply.index);
-        break;
-      }
-      case mr_tasktype::NONE: {
-        // if mr_tasktype::NONE, meaning currently no work is needed, then sleep
-        sleep(1);
-        break;
-      }
-    }
+
   }
 }
 
